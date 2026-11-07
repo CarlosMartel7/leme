@@ -7,6 +7,7 @@ use std::io;
 
 use clap::{Parser, Subcommand};
 
+use crate::config::ConfigError;
 use crate::git::DiscoveryError;
 
 #[derive(Debug, Parser)]
@@ -22,7 +23,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Show the repository, branch and checkout for the current directory
+    /// Show the repository, branch, checkout and preferences for the current directory
+    ///
+    /// Preferences come from leme.toml in the repository's main checkout, so
+    /// every linked worktree reports the same values. Defaults apply when the
+    /// file or a setting is absent.
     Status(status::StatusArgs),
 }
 
@@ -33,6 +38,8 @@ pub enum Error {
     CurrentDirectory(io::Error),
     /// The Git checkout could not be identified.
     Discovery(DiscoveryError),
+    /// The project's preferences could not be read.
+    Config(ConfigError),
     /// The result could not be encoded as JSON.
     Json(serde_json::Error),
     /// The result could not be written to standard output.
@@ -46,6 +53,7 @@ impl fmt::Display for Error {
                 write!(f, "cannot read the current directory: {error}")
             }
             Self::Discovery(error) => error.fmt(f),
+            Self::Config(error) => error.fmt(f),
             Self::Json(error) => write!(f, "cannot encode the result as JSON: {error}"),
             Self::Output(error) => write!(f, "cannot write the result: {error}"),
         }
@@ -57,6 +65,7 @@ impl std::error::Error for Error {
         match self {
             Self::CurrentDirectory(error) | Self::Output(error) => Some(error),
             Self::Discovery(error) => Some(error),
+            Self::Config(error) => Some(error),
             Self::Json(error) => Some(error),
         }
     }
@@ -65,6 +74,12 @@ impl std::error::Error for Error {
 impl From<DiscoveryError> for Error {
     fn from(error: DiscoveryError) -> Self {
         Self::Discovery(error)
+    }
+}
+
+impl From<ConfigError> for Error {
+    fn from(error: ConfigError) -> Self {
+        Self::Config(error)
     }
 }
 

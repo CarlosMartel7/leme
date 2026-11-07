@@ -16,6 +16,10 @@ fn expected(repository: &Path, branch: Value, checkout: &Path) -> Value {
         "repository": repository,
         "branch": branch,
         "checkout": checkout,
+        "preferences": {
+            "integration_branch": "main",
+            "preferred_agent": "claude",
+        },
     })
 }
 
@@ -170,10 +174,13 @@ fn text_and_json_report_the_same_values() {
 
     let json = status_json(&worktree, root.path());
     let text = format!(
-        "Repository: {}\nBranch:     {}\nCheckout:   {}\n",
+        "Repository: {}\nBranch:     {}\nCheckout:   {}\n\n\
+         Integration branch: {}\nPreferred agent:    {}\n",
         json["repository"].as_str().unwrap(),
         json["branch"].as_str().unwrap(),
         json["checkout"].as_str().unwrap(),
+        json["preferences"]["integration_branch"].as_str().unwrap(),
+        json["preferences"]["preferred_agent"].as_str().unwrap(),
     );
     assert_eq!(String::from_utf8_lossy(&output.stdout), text);
 }
