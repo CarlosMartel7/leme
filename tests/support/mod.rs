@@ -1,4 +1,7 @@
 //! Fixtures for tests that run `leme` against real, disposable Git repositories.
+//!
+//! Each test target compiles this module separately and uses only part of it.
+#![allow(dead_code)]
 
 use std::env;
 use std::fs;
