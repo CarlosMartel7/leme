@@ -146,6 +146,11 @@ impl Leme {
     }
 }
 
+/// The state database of a `leme` process created with this `ceiling`.
+pub fn state_database(ceiling: &Path) -> PathBuf {
+    ceiling.join("state/leme/leme.db")
+}
+
 /// Runs `leme status --json` from `directory` and returns the parsed result.
 pub fn status_json(directory: &Path, ceiling: &Path) -> Value {
     let output = Leme::new(directory, ceiling, &["status", "--json"]).run();
