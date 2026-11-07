@@ -9,6 +9,7 @@ use clap::{Parser, Subcommand};
 
 use crate::config::ConfigError;
 use crate::git::DiscoveryError;
+use crate::state::StateError;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -23,11 +24,15 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Show the repository, branch, checkout and preferences for the current directory
+    /// Show the project, checkout, preferences and tasks for the current directory
     ///
     /// Preferences come from leme.toml in the repository's main checkout, so
     /// every linked worktree reports the same values. Defaults apply when the
     /// file or a setting is absent.
+    ///
+    /// The project ID and tasks come from Leme's state database, which is
+    /// created on first use at $XDG_STATE_HOME/leme/leme.db, or
+    /// ~/.local/state/leme/leme.db. The Git repository is not modified.
     Status(status::StatusArgs),
 }
 
@@ -40,6 +45,8 @@ pub enum Error {
     Discovery(DiscoveryError),
     /// The project's preferences could not be read.
     Config(ConfigError),
+    /// The project's state could not be read or recorded.
+    State(StateError),
     /// The result could not be encoded as JSON.
     Json(serde_json::Error),
     /// The result could not be written to standard output.
@@ -54,6 +61,7 @@ impl fmt::Display for Error {
             }
             Self::Discovery(error) => error.fmt(f),
             Self::Config(error) => error.fmt(f),
+            Self::State(error) => error.fmt(f),
             Self::Json(error) => write!(f, "cannot encode the result as JSON: {error}"),
             Self::Output(error) => write!(f, "cannot write the result: {error}"),
         }
@@ -66,6 +74,7 @@ impl std::error::Error for Error {
             Self::CurrentDirectory(error) | Self::Output(error) => Some(error),
             Self::Discovery(error) => Some(error),
             Self::Config(error) => Some(error),
+            Self::State(error) => Some(error),
             Self::Json(error) => Some(error),
         }
     }
@@ -80,6 +89,12 @@ impl From<DiscoveryError> for Error {
 impl From<ConfigError> for Error {
     fn from(error: ConfigError) -> Self {
         Self::Config(error)
+    }
+}
+
+impl From<StateError> for Error {
+    fn from(error: StateError) -> Self {
+        Self::State(error)
     }
 }
 

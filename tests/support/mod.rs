@@ -124,10 +124,13 @@ pub struct Leme {
 
 impl Leme {
     /// Prepares `leme <arguments>` to run from `directory`, seeing no
-    /// repository above `ceiling`.
+    /// repository above `ceiling` and keeping its state under `ceiling`.
     pub fn new(directory: &Path, ceiling: &Path, arguments: &[&str]) -> Self {
         let mut command = isolated(Command::new(env!("CARGO_BIN_EXE_leme")), ceiling);
-        command.current_dir(directory).args(arguments);
+        command
+            .current_dir(directory)
+            .args(arguments)
+            .env("XDG_STATE_HOME", ceiling.join("state"));
         Self { command }
     }
 

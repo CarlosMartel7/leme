@@ -20,7 +20,19 @@ fn expected(repository: &Path, branch: Value, checkout: &Path) -> Value {
             "integration_branch": "main",
             "preferred_agent": "claude",
         },
+        "tasks": [],
     })
+}
+
+/// The status of `directory` without its generated project ID.
+fn location(directory: &Path, ceiling: &Path) -> Value {
+    let mut status = status_json(directory, ceiling);
+    status
+        .as_object_mut()
+        .expect("status object")
+        .remove("project_id")
+        .expect("project ID");
+    status
 }
 
 #[test]
@@ -30,7 +42,7 @@ fn reports_the_main_checkout() {
     init_repository(&repository);
 
     assert_eq!(
-        status_json(&repository, root.path()),
+        location(&repository, root.path()),
         expected(&repository, json!("main"), &repository)
     );
 }
@@ -44,7 +56,7 @@ fn resolves_a_nested_directory_to_its_checkout() {
     fs::create_dir_all(&nested).unwrap();
 
     assert_eq!(
-        status_json(&nested, root.path()),
+        location(&nested, root.path()),
         expected(&repository, json!("main"), &repository)
     );
 }
@@ -58,11 +70,11 @@ fn distinguishes_a_linked_worktree_from_the_main_checkout() {
     add_worktree(&repository, &worktree, "feature/one");
 
     assert_eq!(
-        status_json(&worktree, root.path()),
+        location(&worktree, root.path()),
         expected(&repository, json!("feature/one"), &worktree)
     );
     assert_eq!(
-        status_json(&repository, root.path()),
+        location(&repository, root.path()),
         expected(&repository, json!("main"), &repository)
     );
 }
@@ -78,7 +90,7 @@ fn resolves_a_directory_nested_in_a_linked_worktree() {
     fs::create_dir(&nested).unwrap();
 
     assert_eq!(
-        status_json(&nested, root.path()),
+        location(&nested, root.path()),
         expected(&repository, json!("feature/one"), &worktree)
     );
 }
@@ -94,11 +106,11 @@ fn handles_spaces_in_checkout_paths() {
     fs::create_dir(&nested).unwrap();
 
     assert_eq!(
-        status_json(&nested, root.path()),
+        location(&nested, root.path()),
         expected(&repository, json!("main"), &repository)
     );
     assert_eq!(
-        status_json(&worktree, root.path()),
+        location(&worktree, root.path()),
         expected(&repository, json!("feature/one"), &worktree)
     );
 }
@@ -111,7 +123,7 @@ fn reports_a_detached_head_as_no_branch() {
     git(&repository, &["checkout", "--quiet", "--detach"]);
 
     assert_eq!(
-        status_json(&repository, root.path()),
+        location(&repository, root.path()),
         expected(&repository, Value::Null, &repository)
     );
 
@@ -129,7 +141,7 @@ fn reports_a_branch_without_commits() {
     git(&repository, &["init", "--quiet", "--initial-branch=trunk"]);
 
     assert_eq!(
-        status_json(&repository, root.path()),
+        location(&repository, root.path()),
         expected(&repository, json!("trunk"), &repository)
     );
 }
@@ -156,7 +168,7 @@ fn treats_a_submodule_as_its_own_main_checkout() {
     let submodule = repository.join("vendor/dependency");
 
     assert_eq!(
-        status_json(&submodule, root.path()),
+        location(&submodule, root.path()),
         expected(&submodule, json!("main"), &submodule)
     );
 }
@@ -174,8 +186,9 @@ fn text_and_json_report_the_same_values() {
 
     let json = status_json(&worktree, root.path());
     let text = format!(
-        "Repository: {}\nBranch:     {}\nCheckout:   {}\n\n\
-         Integration branch: {}\nPreferred agent:    {}\n",
+        "Project:    {}\nRepository: {}\nBranch:     {}\nCheckout:   {}\n\n\
+         Integration branch: {}\nPreferred agent:    {}\n\nTasks: none\n",
+        json["project_id"].as_str().unwrap(),
         json["repository"].as_str().unwrap(),
         json["branch"].as_str().unwrap(),
         json["checkout"].as_str().unwrap(),
