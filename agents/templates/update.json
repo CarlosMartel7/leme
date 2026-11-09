@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "kind": "agent_update",
+  "observed_at": "2026-11-09T14:41:00-03:00",
+  "project_id": "<Leme project ID>",
+  "task_id": "<task ID>",
+  "step_id": "<step ID, or null>",
+  "plan_version": 1,
+  "agent": {
+    "role": "feature-agent",
+    "cli": "claude",
+    "session_id": null
+  },
+  "activity": "awaiting_input",
+  "step_state": "awaiting_review",
+  "summary": "<one sentence the dashboard can show>",
+  "highlights": [
+    "<short line for the dashboard>"
+  ],
+  "checks": [
+    {
+      "name": "<check name>",
+      "command": "<command>",
+      "outcome": "passed",
+      "observed_at": "2026-11-09T14:39:02-03:00"
+    }
+  ],
+  "blockers": [],
+  "next_action": "<next concrete action and who takes it>",
+  "notion": {
+    "status": "published",
+    "record_url": "<Notion URL, or null>",
+    "publication_id": null,
+    "source_read_at": "2026-11-09T14:00:00-03:00"
+  }
+}

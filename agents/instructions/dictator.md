@@ -75,3 +75,11 @@ reason and its effect on the plan, or "rationale not provided".
 
 Report each instruction you sent and its outcome, so the user can audit what
 you directed.
+
+## Templates
+
+- [Feature plan](../templates/feature-plan.md) and [step](../templates/step.md)
+  for plans.
+- [Decision](../templates/decision.md) for user decisions.
+- [Structured update](../templates/update.json) for dashboard notes; its fields
+  are described in the [installation map](../installation-map.md).

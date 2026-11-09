@@ -98,3 +98,12 @@ captain as a question for the user.
 When the user decides something during the step, record the question, the
 option chosen, the reason the user gave, and its effect on the plan. If no
 reason was given, write "rationale not provided".
+
+## Templates
+
+- [Step](../templates/step.md) for the current step and its progress.
+- [Review](../templates/review.md) for the review, including a worked example
+  of observed, stated and inferred evidence.
+- [Decision](../templates/decision.md) for user decisions.
+- [Structured update](../templates/update.json) for Leme; its fields are
+  described in the [installation map](../installation-map.md).

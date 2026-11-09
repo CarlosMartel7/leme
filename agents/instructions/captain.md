@@ -88,3 +88,11 @@ Progress is reported as `x/y`: `x` is the number of steps the user has approved
 with a matching commit, and `y` is the current estimate of commits needed. A
 commit is not an approval. Do not measure progress by changed files or lines.
 When `y` changes, record the revised plan and the reason in Notion.
+
+## Templates
+
+- [Feature plan](../templates/feature-plan.md) and [step](../templates/step.md)
+  for plans.
+- [Decision](../templates/decision.md) for user decisions.
+- [Structured update](../templates/update.json) for dashboard notes; its fields
+  are described in the [installation map](../installation-map.md).
