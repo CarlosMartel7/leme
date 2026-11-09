@@ -3,8 +3,9 @@
 ## Project and stack
 
 Leme organizes AI-assisted development for one repository at a time. The target
-is Linux inside WSL. The implemented CLI currently exposes `leme status`;
-Herdr integration and the dashboard are planned work, not existing features.
+is Linux inside WSL. The implemented CLI currently exposes `leme status` and
+`leme doctor`; Herdr integration and the dashboard are planned work, not
+existing features.
 
 This is a Rust 2024 Cargo project. Clap handles CLI parsing, Serde handles JSON,
 TOML holds project preferences, and rusqlite manages a local SQLite database.
