@@ -128,3 +128,12 @@ cargo clippy --locked --all-targets -- -D warnings
 
 Tests use disposable Git repositories and isolated SQLite state. Add `--offline`
 to Cargo test/Clippy commands when dependencies are already cached.
+
+The dashboard's end-to-end tests run it in a real pseudo-terminal and are
+skipped by `cargo test`. Run them on Linux or WSL with:
+
+```sh
+cargo test --locked --test dashboard_e2e -- --ignored --test-threads=1
+```
+
+The harness is described in `tests/support/pty.rs`.
