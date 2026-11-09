@@ -1,11 +1,14 @@
 # Leme
 
 Leme is a Rust command-line project for organizing AI-assisted development in
-Linux inside WSL. Its current command, `leme status`, identifies the Git project
-and checkout, loads project preferences, and reports locally registered tasks.
+Linux inside WSL. It currently has two commands: `leme status` identifies the
+Git project and checkout, loads project preferences, and reports locally
+registered tasks; `leme doctor` checks which Leme actions this installation
+supports.
 
 The broader plan includes Herdr workspaces, agent sessions, and a terminal
-dashboard. Those integrations are not implemented by the current status command.
+dashboard. Those integrations are not implemented yet; `leme doctor` only checks
+whether the tools they will need are ready.
 
 ## Build and install
 
@@ -50,6 +53,40 @@ Git repository nested inside another repository and has its own project identity
 First use creates a project record with an empty task list. There is no task
 creation command yet. Status does not change Git history, refs, staged files,
 or working files. Outside a checkout it exits with an actionable error.
+
+## Check the environment
+
+Run from a project checkout to see which Leme actions will work here:
+
+```sh
+leme doctor
+leme doctor --json
+leme doctor --timeout 10
+```
+
+Doctor looks for Git (2.31 or later), Herdr and its running server, Neovim, the
+Claude Code and Codex CLIs, `gh`, and `git-flow`. It also checks the project
+repository, its `leme.toml`, and the state directory. Each action is reported
+as:
+
+- `available`: every check it needs passed.
+- `uncertain`: nothing failed, but compatibility could not be confirmed, for
+  example a Herdr whose API protocol differs from the one Leme was tested with.
+- `unavailable`: a check it needs failed. Each failed check names the manual
+  correction, and other actions are unaffected; a missing `gh`, for example,
+  disables only GitHub queries.
+
+Herdr is checked with `herdr status server --json` and `herdr api schema --json`,
+which list the server state and the operations it supports. Rust, Cargo and a C
+compiler are listed separately, because they are needed only to build Leme.
+
+Doctor only reads. It runs version and status commands, never authentication
+commands, and does not install or configure tools or change repository files.
+The only write is an empty probe file, created and removed at once, that shows
+whether the state directory accepts new files; the database itself is not
+created or migrated. Each tool has `--timeout` seconds (default 5) to answer.
+The exit status is 0 whenever the report is printed, since missing optional
+tools are part of the diagnosis.
 
 ## Preferences
 

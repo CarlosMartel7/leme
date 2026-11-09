@@ -1,5 +1,6 @@
 //! Command-line interface and command dispatch.
 
+mod doctor;
 mod status;
 
 use std::fmt;
@@ -34,6 +35,23 @@ enum Command {
     /// created on first use at $XDG_STATE_HOME/leme/leme.db, or
     /// ~/.local/state/leme/leme.db. The Git repository is not modified.
     Status(status::StatusArgs),
+
+    /// Check which Leme actions this installation supports
+    ///
+    /// Looks for Git, Herdr and its server, Neovim, the Claude Code and Codex
+    /// CLIs, gh and git-flow, then checks the current project, its
+    /// preferences and the state directory. Each action is reported as
+    /// available, uncertain (compatibility could not be confirmed) or
+    /// unavailable, with the manual correction for each failed check. Rust,
+    /// Cargo and a C compiler are reported separately: they are needed only to
+    /// build Leme.
+    ///
+    /// Doctor only reads: it runs version and status commands, never installs
+    /// or configures a tool, and changes no repository file. The only write is
+    /// an empty probe file, removed at once, that shows whether the state
+    /// directory accepts new files. Missing tools are part of the diagnosis,
+    /// so the exit status is 0 whenever the report is printed.
+    Doctor(doctor::DoctorArgs),
 }
 
 /// A failure to report to the user before exiting.
@@ -104,5 +122,6 @@ impl From<StateError> for Error {
 pub fn run() -> Result<(), Error> {
     match Cli::parse().command {
         Command::Status(args) => status::run(&args),
+        Command::Doctor(args) => doctor::run(&args),
     }
 }
