@@ -1,11 +1,12 @@
 # Leme
 
 Leme is a Rust command-line project for organizing AI-assisted development in
-Linux inside WSL. Its current command, `leme status`, identifies the Git project
-and checkout, loads project preferences, and reports locally registered tasks.
+Linux inside WSL. `leme status` identifies the Git project and checkout, loads
+project preferences, and reports locally registered tasks. `leme dashboard`
+shows the same project in a full-screen terminal view.
 
-The broader plan includes Herdr workspaces, agent sessions, and a terminal
-dashboard. Those integrations are not implemented by the current status command.
+The broader plan includes Herdr workspaces, agent sessions, and live agent data
+in the dashboard. Those integrations are not implemented yet.
 
 ## Build and install
 
@@ -50,6 +51,24 @@ Git repository nested inside another repository and has its own project identity
 First use creates a project record with an empty task list. There is no task
 creation command yet. Status does not change Git history, refs, staged files,
 or working files. Outside a checkout it exits with an actionable error.
+
+## Open the dashboard
+
+Run from a Git checkout, in a terminal or a Herdr pane:
+
+```sh
+leme dashboard
+```
+
+The dashboard shows the project ID, the current branch and checkout, the
+project preferences, and the registered tasks, or a message when there are
+none. Keys: `?` shows help, `r` refreshes, `↑`/`↓` (or `k`/`j`) select a task,
+and `q` or `Esc` quits and returns the terminal to normal. If the project
+cannot be loaded, the error is shown on screen and `r` retries.
+
+Refreshing reads Git and Leme's state database only. It does not change the
+repository and does not start an agent. The dashboard needs an interactive
+terminal and exits with an error when its input or output is redirected.
 
 ## Preferences
 

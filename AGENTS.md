@@ -3,12 +3,13 @@
 ## Project and stack
 
 Leme organizes AI-assisted development for one repository at a time. The target
-is Linux inside WSL. The implemented CLI currently exposes `leme status`;
-Herdr integration and the dashboard are planned work, not existing features.
+is Linux inside WSL. The implemented CLI exposes `leme status` and a first
+`leme dashboard` screen; Herdr integration and live agent data are planned work,
+not existing features.
 
 This is a Rust 2024 Cargo project. Clap handles CLI parsing, Serde handles JSON,
 TOML holds project preferences, and rusqlite manages a local SQLite database.
-SQLite is bundled. Ratatui and Crossterm are dependencies for the planned UI.
+SQLite is bundled. Ratatui and Crossterm draw the dashboard.
 Do not introduce Python or Node as requirements for the core executable.
 
 ## Branches and human review
@@ -27,6 +28,8 @@ work. Report proposed corrections before applying PR-audit adjustments.
 - `src/commands/`: CLI dispatch and output; text and JSON use the same values.
 - `src/git/`: live branch, current checkout, and shared repository discovery.
   Discovery must leave refs, history, index, and working files unchanged.
+- `src/dashboard/`: snapshot collection, screen state (`app`) and drawing
+  (`view`), kept separate so state can be tested without a terminal.
 - `src/config.rs`: `leme.toml` from the primary checkout; linked worktrees share
   preferences. Missing settings use defaults; invalid settings report errors.
 - `src/state/`: durable project identity, task associations, and schema migrations.
