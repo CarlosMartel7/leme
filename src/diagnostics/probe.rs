@@ -17,7 +17,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use super::{Probes, Run, StateProbe, ToolProbe};
+use super::{HerdrProbes, Probes, Run, StateProbe, ToolProbe};
 use crate::config::Preferences;
 use crate::git;
 use crate::state;
@@ -46,26 +46,7 @@ pub fn collect(directory: Result<&Path, &io::Error>, timeout: Duration) -> Probe
 
     thread::scope(|scope| {
         let git = scope.spawn(|| tool("git", &["--version"]));
-        let herdr = scope.spawn(|| {
-            let herdr = tool("herdr", &["--version"]);
-            let (server, schema) = match &herdr {
-                ToolProbe::Found {
-                    path,
-                    run: Run::Finished { success: true, .. },
-                } => (
-                    Some(run(
-                        herdr_command(path, &["status", "server", "--json"]),
-                        timeout,
-                    )),
-                    Some(run(
-                        herdr_command(path, &["api", "schema", "--json"]),
-                        timeout,
-                    )),
-                ),
-                _ => (None, None),
-            };
-            (herdr, server, schema)
-        });
+        let herdr = scope.spawn(|| probe_herdr(find_executable("herdr", search_path), timeout));
         let neovim = scope.spawn(|| {
             probe_tool("nvim", search_path, timeout, |command| {
                 // Otherwise even `nvim --version` creates a log file in
@@ -90,7 +71,11 @@ pub fn collect(directory: Result<&Path, &io::Error>, timeout: Duration) -> Probe
         });
         let state = state_probe();
 
-        let (herdr, herdr_server, herdr_schema) = join(herdr);
+        let HerdrProbes {
+            tool: herdr,
+            server: herdr_server,
+            schema: herdr_schema,
+        } = join(herdr);
         Probes {
             git: join(git),
             repository,
@@ -115,6 +100,38 @@ fn join<T>(handle: thread::ScopedJoinHandle<'_, T>) -> T {
     handle
         .join()
         .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+}
+
+/// Runs `herdr --version` from `executable` and, when it answers, asks the
+/// server for its status and API schema. `None` means no executable was
+/// found. Each command may run for at most `timeout`.
+pub fn probe_herdr(executable: Option<PathBuf>, timeout: Duration) -> HerdrProbes {
+    let Some(path) = executable else {
+        return HerdrProbes {
+            tool: ToolProbe::Missing,
+            server: None,
+            schema: None,
+        };
+    };
+    let version = run(herdr_command(&path, &["--version"]), timeout);
+    let (server, schema) = match version {
+        Run::Finished { success: true, .. } => (
+            Some(run(
+                herdr_command(&path, &["status", "server", "--json"]),
+                timeout,
+            )),
+            Some(run(
+                herdr_command(&path, &["api", "schema", "--json"]),
+                timeout,
+            )),
+        ),
+        _ => (None, None),
+    };
+    HerdrProbes {
+        tool: ToolProbe::Found { path, run: version },
+        server,
+        schema,
+    }
 }
 
 fn herdr_command(herdr: &Path, arguments: &[&str]) -> Command {

@@ -6,11 +6,8 @@ use std::time::Duration;
 
 use clap::Args;
 
-use super::Error;
+use super::{Error, parse_timeout};
 use crate::diagnostics::{self, Capability, CapabilityStatus, Check, CheckStatus, Report};
-
-/// Longest probe timeout accepted, in seconds.
-const MAXIMUM_TIMEOUT: f64 = 600.0;
 
 #[derive(Debug, Args)]
 pub struct DoctorArgs {
@@ -21,18 +18,6 @@ pub struct DoctorArgs {
     /// Seconds each tool may take to answer before it counts as failed
     #[arg(long, value_name = "SECONDS", default_value = "5", value_parser = parse_timeout)]
     timeout: Duration,
-}
-
-fn parse_timeout(text: &str) -> Result<Duration, String> {
-    let seconds: f64 = text
-        .parse()
-        .map_err(|_| format!("`{text}` is not a number of seconds"))?;
-    if !(seconds > 0.0 && seconds <= MAXIMUM_TIMEOUT) {
-        return Err(format!(
-            "the timeout must be more than 0 and at most {MAXIMUM_TIMEOUT} seconds"
-        ));
-    }
-    Ok(Duration::from_secs_f64(seconds))
 }
 
 pub fn run(args: &DoctorArgs) -> Result<(), Error> {
