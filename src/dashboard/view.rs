@@ -12,8 +12,8 @@ use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph, Wrap};
 
-use super::Snapshot;
 use super::app::{App, Load};
+use super::{Snapshot, clock};
 
 /// Width of the labels in the project header, including the gap after them.
 const LABEL_WIDTH: usize = 10;
@@ -42,7 +42,7 @@ pub fn render(app: &App, frame: &mut Frame) {
     ])
     .areas(frame.area());
 
-    render_header(app.snapshot(), frame, header);
+    render_header(app, frame, header);
     match app.snapshot() {
         Some(snapshot) => render_tasks(snapshot, app.selected(), frame, body),
         None => render_placeholder(app.load(), frame, body),
@@ -54,8 +54,13 @@ pub fn render(app: &App, frame: &mut Frame) {
     }
 }
 
-fn render_header(snapshot: Option<&Snapshot>, frame: &mut Frame, area: Rect) {
-    let block = Block::bordered().title(" Leme ".bold());
+fn render_header(app: &App, frame: &mut Frame, area: Rect) {
+    let mut block = Block::bordered().title(" Leme ".bold());
+    if let Some(reading) = app.clock() {
+        let time = clock::display(reading, app.clock_format());
+        block = block.title_top(Line::from(format!(" {time} ")).right_aligned());
+    }
+    let snapshot = app.snapshot();
     let width = usize::from(block.inner(area).width).saturating_sub(LABEL_WIDTH);
     let lines = match snapshot {
         Some(snapshot) => vec![

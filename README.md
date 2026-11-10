@@ -40,7 +40,8 @@ Status reports:
 
 - A locally persisted project ID and the primary checkout path.
 - The current checkout path and branch; detached HEAD has no branch.
-- The integration branch and preferred agent from project preferences.
+- The integration branch, preferred agent and clock format from project
+  preferences.
 - Registered tasks with their IDs, branches, and worktree paths.
 
 A Git worktree is another working folder for the same repository, often on a
@@ -66,6 +67,11 @@ none. Keys: `?` shows help, `r` refreshes, `↑`/`↓` (or `k`/`j`) select a tas
 and `q` or `Esc` quits and returns the terminal to normal. If the project
 cannot be loaded, the error is shown on screen and `r` retries.
 
+The local time appears in the top-right corner in the project's
+`clock_format`, followed by the time-zone abbreviation, or `--:--` if the
+system cannot report it. It is read from the C library, like `date`, and
+keeps updating while the project loads or refreshes.
+
 Refreshing reads Git and Leme's state database only. It does not change the
 repository and does not start an agent. The dashboard needs an interactive
 terminal and exits with an error when its input or output is redirected.
@@ -77,9 +83,11 @@ Create an optional `leme.toml` at the root of the project's primary checkout:
 ```toml
 integration_branch = "main"
 preferred_agent = "claude"
+clock_format = "24h"
 ```
 
-These are also the defaults. Supported agent values are `claude` and `codex`.
+These are also the defaults. Supported agent values are `claude` and `codex`;
+supported clock formats are `24h` and `12h`.
 Every field is optional. Invalid TOML, unknown fields, invalid types, unsupported
 agents, and empty branch names produce errors rather than silently using defaults.
 The agent preference is reported by status; status does not launch an agent.

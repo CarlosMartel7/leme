@@ -5,3 +5,4 @@ pub mod config;
 pub mod dashboard;
 pub mod git;
 pub mod state;
+pub mod time;

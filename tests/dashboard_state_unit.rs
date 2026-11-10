@@ -3,11 +3,12 @@
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use leme::config::Preferences;
+use leme::config::{ClockFormat, Preferences};
 use leme::dashboard::app::{App, Effect, Input, Load};
-use leme::dashboard::{CollectError, Snapshot, view};
+use leme::dashboard::{CollectError, Snapshot, clock, view};
 use leme::git::{Checkout, DiscoveryError};
 use leme::state::Task;
+use leme::time::local::{LocalTime, Unavailable};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
@@ -287,4 +288,56 @@ fn the_screen_shows_loading_before_the_first_snapshot() {
     let rows = render(&app, 40, 16);
     assert!(screen_contains(&rows, "Loading the project"));
     assert!(screen_contains(&rows, "Not loaded yet"));
+}
+
+fn local_time(hour: u8, minute: u8, zone: Option<&str>) -> LocalTime {
+    LocalTime {
+        hour,
+        minute,
+        second: 30,
+        zone: zone.map(str::to_owned),
+    }
+}
+
+#[test]
+fn the_clock_is_written_in_the_chosen_format() {
+    let cases = [
+        (0, 5, ClockFormat::TwentyFourHour, "00:05 UTC"),
+        (14, 5, ClockFormat::TwentyFourHour, "14:05 UTC"),
+        (0, 5, ClockFormat::TwelveHour, "12:05 AM UTC"),
+        (12, 0, ClockFormat::TwelveHour, "12:00 PM UTC"),
+        (23, 59, ClockFormat::TwelveHour, "11:59 PM UTC"),
+    ];
+    for (hour, minute, format, expected) in cases {
+        let reading = Ok(local_time(hour, minute, Some("UTC")));
+        assert_eq!(clock::display(&reading, format), expected);
+    }
+    let without_zone = Ok(local_time(9, 7, None));
+    assert_eq!(
+        clock::display(&without_zone, ClockFormat::TwentyFourHour),
+        "09:07"
+    );
+    assert_eq!(
+        clock::display(&Err(Unavailable), ClockFormat::TwelveHour),
+        "--:--"
+    );
+}
+
+#[test]
+fn the_header_shows_the_clock_whether_or_not_the_project_loaded() {
+    let (mut app, _) = App::new();
+    assert!(app.clock().is_none());
+    app.handle(Input::Clock(Ok(local_time(14, 5, Some("-03")))));
+    assert!(screen_contains(&render(&app, 40, 16), "14:05 -03"));
+
+    app.handle(Input::Collected(Err(failure())));
+    assert!(screen_contains(&render(&app, 40, 16), "14:05 -03"));
+
+    let mut snapshot = snapshot(0);
+    snapshot.preferences.clock_format = ClockFormat::TwelveHour;
+    app.handle(Input::Collected(Ok(snapshot)));
+    assert!(screen_contains(&render(&app, 40, 16), "2:05 PM -03"));
+
+    app.handle(Input::Clock(Err(Unavailable)));
+    assert!(screen_contains(&render(&app, 40, 16), "--:--"));
 }

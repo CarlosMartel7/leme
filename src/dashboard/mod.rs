@@ -8,11 +8,13 @@
 //! - [`app::App`] holds what the screen shows and reacts to input. It never
 //!   touches the terminal or collects data itself; it asks for a collection by
 //!   returning [`app::Effect::Collect`].
-//! - [`view::render`] draws an `App` into a Ratatui frame.
+//! - [`view::render`] draws an `App` into a Ratatui frame, with the local
+//!   time from [`clock`] in its header.
 //!
 //! The `dashboard` command connects these to a real terminal.
 
 pub mod app;
+pub mod clock;
 pub mod view;
 
 use std::fmt;

@@ -7,6 +7,8 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use super::{CollectError, Snapshot};
+use crate::config::ClockFormat;
+use crate::time::local::Reading;
 
 /// Something that happened and may change the screen.
 #[derive(Debug)]
@@ -15,6 +17,9 @@ pub enum Input {
     Key(KeyEvent),
     /// A collection started by [`Effect::Collect`] finished.
     Collected(Result<Snapshot, CollectError>),
+    /// The local time was read. The caller reads it on its own schedule,
+    /// independently of collections.
+    Clock(Reading),
 }
 
 /// Work the caller must carry out on the app's behalf.
@@ -48,6 +53,8 @@ pub struct App {
     selected: usize,
     help: bool,
     quit: bool,
+    /// The most recent local-time reading, if any has arrived.
+    clock: Option<Reading>,
 }
 
 impl App {
@@ -62,6 +69,7 @@ impl App {
             selected: 0,
             help: false,
             quit: false,
+            clock: None,
         };
         (app, Effect::Collect)
     }
@@ -88,6 +96,21 @@ impl App {
         self.help
     }
 
+    /// The most recent local-time reading, or `None` before the first one.
+    pub fn clock(&self) -> Option<&Reading> {
+        self.clock.as_ref()
+    }
+
+    /// How the clock is written: the project's preference once a snapshot
+    /// has loaded, and the default before that or when loading fails.
+    pub fn clock_format(&self) -> ClockFormat {
+        self.snapshot
+            .as_ref()
+            .map_or_else(ClockFormat::default, |snapshot| {
+                snapshot.preferences.clock_format
+            })
+    }
+
     /// Whether the user asked to leave the dashboard.
     pub fn should_quit(&self) -> bool {
         self.quit
@@ -99,6 +122,10 @@ impl App {
             Input::Key(key) => self.key(key),
             Input::Collected(result) => {
                 self.collected(result);
+                None
+            }
+            Input::Clock(reading) => {
+                self.clock = Some(reading);
                 None
             }
         }

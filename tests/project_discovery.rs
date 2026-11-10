@@ -19,6 +19,7 @@ fn expected(repository: &Path, branch: Value, checkout: &Path) -> Value {
         "preferences": {
             "integration_branch": "main",
             "preferred_agent": "claude",
+            "clock_format": "24h",
         },
         "tasks": [],
     })
@@ -187,13 +188,14 @@ fn text_and_json_report_the_same_values() {
     let json = status_json(&worktree, root.path());
     let text = format!(
         "Project:    {}\nRepository: {}\nBranch:     {}\nCheckout:   {}\n\n\
-         Integration branch: {}\nPreferred agent:    {}\n\nTasks: none\n",
+         Integration branch: {}\nPreferred agent:    {}\nClock format:       {}\n\nTasks: none\n",
         json["project_id"].as_str().unwrap(),
         json["repository"].as_str().unwrap(),
         json["branch"].as_str().unwrap(),
         json["checkout"].as_str().unwrap(),
         json["preferences"]["integration_branch"].as_str().unwrap(),
         json["preferences"]["preferred_agent"].as_str().unwrap(),
+        json["preferences"]["clock_format"].as_str().unwrap(),
     );
     assert_eq!(String::from_utf8_lossy(&output.stdout), text);
 }

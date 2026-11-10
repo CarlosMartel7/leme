@@ -5,7 +5,7 @@ use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use clap::Args;
 use crossterm::event::{self, Event};
@@ -14,12 +14,17 @@ use ratatui::DefaultTerminal;
 use super::Error;
 use crate::dashboard::app::{App, Effect, Input};
 use crate::dashboard::{self, CollectError, Snapshot, view};
+use crate::time::local::{self, Reading};
 
 #[derive(Debug, Args)]
 pub struct DashboardArgs {}
 
 /// How long to wait for a key before checking for a finished collection.
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// How often the local time is read. Short enough that the header changes
+/// within a fraction of a second of the minute changing.
+const CLOCK_INTERVAL: Duration = Duration::from_millis(250);
 
 type Collected = Result<Snapshot, CollectError>;
 
@@ -32,12 +37,13 @@ pub fn run(_args: &DashboardArgs) -> Result<(), Error> {
     let (sender, receiver) = mpsc::channel();
     let (mut app, effect) = App::new();
     perform(effect, &directory, &sender);
+    let mut clock = Clock::default();
     while !app.should_quit() {
         session
             .terminal
             .draw(|frame| view::render(&app, frame))
             .map_err(Error::Terminal)?;
-        let Some(input) = next_input(&receiver).map_err(Error::Terminal)? else {
+        let Some(input) = next_input(&receiver, &mut clock).map_err(Error::Terminal)? else {
             continue;
         };
         if let Some(effect) = app.handle(input) {
@@ -65,8 +71,11 @@ fn collect_in_background(directory: PathBuf, sender: Sender<Collected>) {
 /// Waits for the next input for the app.
 ///
 /// Returns `None` when the screen only needs to be redrawn, as after a resize.
-fn next_input(receiver: &Receiver<Collected>) -> io::Result<Option<Input>> {
+fn next_input(receiver: &Receiver<Collected>, clock: &mut Clock) -> io::Result<Option<Input>> {
     loop {
+        if let Some(reading) = clock.changed() {
+            return Ok(Some(Input::Clock(reading)));
+        }
         if let Ok(result) = receiver.try_recv() {
             return Ok(Some(Input::Collected(result)));
         }
@@ -78,6 +87,33 @@ fn next_input(receiver: &Receiver<Collected>) -> io::Result<Option<Input>> {
             Event::Resize(..) => return Ok(None),
             _ => {}
         }
+    }
+}
+
+/// Reads the local time for the header, independently of collections.
+#[derive(Default)]
+struct Clock {
+    last: Option<Reading>,
+    read_at: Option<Instant>,
+}
+
+impl Clock {
+    /// Reads the local time at most once per [`CLOCK_INTERVAL`] and returns
+    /// the reading when it differs from the previous one.
+    fn changed(&mut self) -> Option<Reading> {
+        if self
+            .read_at
+            .is_some_and(|read_at| read_at.elapsed() < CLOCK_INTERVAL)
+        {
+            return None;
+        }
+        self.read_at = Some(Instant::now());
+        let reading = local::now();
+        if self.last.as_ref() == Some(&reading) {
+            return None;
+        }
+        self.last = Some(reading.clone());
+        Some(reading)
     }
 }
 

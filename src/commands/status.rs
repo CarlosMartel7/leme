@@ -56,12 +56,13 @@ fn render_text(status: &Status) -> String {
     } = status;
     format!(
         "Project:    {project_id}\nRepository: {}\nBranch:     {}\nCheckout:   {}\n\n\
-         Integration branch: {}\nPreferred agent:    {}\n\n{}",
+         Integration branch: {}\nPreferred agent:    {}\nClock format:       {}\n\n{}",
         checkout.repository.display(),
         checkout.branch.as_deref().unwrap_or("(detached HEAD)"),
         checkout.checkout.display(),
         preferences.integration_branch,
         preferences.preferred_agent,
+        preferences.clock_format,
         render_tasks(tasks),
     )
 }

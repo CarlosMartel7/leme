@@ -34,6 +34,27 @@ impl fmt::Display for Agent {
     }
 }
 
+/// How the dashboard writes the time of day.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ClockFormat {
+    /// `14:05`.
+    #[default]
+    #[serde(rename = "24h")]
+    TwentyFourHour,
+    /// `2:05 PM`.
+    #[serde(rename = "12h")]
+    TwelveHour,
+}
+
+impl fmt::Display for ClockFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::TwentyFourHour => "24h",
+            Self::TwelveHour => "12h",
+        })
+    }
+}
+
 /// The settings a project can choose, with defaults for any it leaves out.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -43,6 +64,8 @@ pub struct Preferences {
     pub integration_branch: String,
     /// Agent started for a feature unless the user picks another.
     pub preferred_agent: Agent,
+    /// How the dashboard shows the local time.
+    pub clock_format: ClockFormat,
 }
 
 impl Default for Preferences {
@@ -50,6 +73,7 @@ impl Default for Preferences {
         Self {
             integration_branch: DEFAULT_INTEGRATION_BRANCH.to_owned(),
             preferred_agent: Agent::default(),
+            clock_format: ClockFormat::default(),
         }
     }
 }
