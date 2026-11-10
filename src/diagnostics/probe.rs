@@ -239,12 +239,28 @@ fn state_probe() -> StateProbe {
             reason,
         };
     }
+    if let Err(reason) = accepts_writes(&path) {
+        return StateProbe::Unwritable { path, reason };
+    }
     match state::existing_schema_version(&path) {
         Ok(schema) => StateProbe::Usable { path, schema },
         Err(error) => StateProbe::Unreadable {
             path,
             reason: error.to_string(),
         },
+    }
+}
+
+/// Learns whether an existing database file accepts writes, which `leme
+/// status` needs to record a project. Opening the file for writing, without
+/// truncating or writing anything, leaves its contents and modification time
+/// unchanged, and, unlike permission bits, accounts for access control lists
+/// and read-only mounts.
+fn accepts_writes(database: &Path) -> Result<(), String> {
+    match OpenOptions::new().write(true).open(database) {
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("cannot write to {}: {error}", database.display())),
     }
 }
 

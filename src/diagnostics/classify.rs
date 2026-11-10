@@ -481,7 +481,7 @@ fn state_check(probe: &StateProbe) -> Check {
         }
         StateProbe::Unwritable { path, reason } => (
             check(CheckStatus::Failed, reason.clone()).correction(
-                "Make that directory writable, or set XDG_STATE_HOME to an absolute, \
+                "Make that location writable, or set XDG_STATE_HOME to an absolute, \
                  writable directory outside your checkouts.",
             ),
             path,

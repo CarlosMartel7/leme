@@ -83,8 +83,9 @@ compiler are listed separately, because they are needed only to build Leme.
 Doctor only reads. It runs version and status commands, never authentication
 commands, and does not install or configure tools or change repository files.
 The only write is an empty probe file, created and removed at once, that shows
-whether the state directory accepts new files; the database itself is not
-created or migrated. Each tool has `--timeout` seconds (default 5) to answer.
+whether the state directory accepts new files. An existing database is opened
+for writing to confirm `leme status` can update it, but nothing is written, and
+the database is never created or migrated. Each tool has `--timeout` seconds (default 5) to answer.
 The exit status is 0 whenever the report is printed, since missing optional
 tools are part of the diagnosis.
 

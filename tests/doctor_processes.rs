@@ -646,6 +646,56 @@ fn a_database_from_a_newer_leme_is_reported_and_left_unchanged() {
     assert_eq!(fs::read(&database).unwrap(), bytes);
 }
 
+/// Regression: doctor reported a read-only database as ready, although
+/// `leme status` cannot record the project in it.
+#[test]
+fn a_database_that_rejects_writes_is_not_reported_ready() {
+    let environment = Environment::healthy();
+    let status = || {
+        Leme::new(
+            &environment.repository,
+            environment.root.path(),
+            &["status"],
+        )
+        .run()
+    };
+    assert!(status().status.success());
+    let database = state_database(environment.root.path());
+    fs::set_permissions(&database, fs::Permissions::from_mode(0o444)).unwrap();
+    // Some users, such as root, may write regardless of permissions.
+    let writable = fs::OpenOptions::new().write(true).open(&database).is_ok();
+    let bytes = fs::read(&database).unwrap();
+    // A second project must be recorded, so status really needs to write.
+    let other = environment.root.path().join("other");
+    init_repository(&other);
+    let other_status = Leme::new(&other, environment.root.path(), &["status"]).run();
+
+    let report = doctor_json(environment.doctor(&["--json"]));
+    fs::set_permissions(&database, fs::Permissions::from_mode(0o644)).unwrap();
+
+    if writable {
+        eprintln!("skipped: this user can write to a read-only file");
+        return;
+    }
+    assert!(
+        !other_status.status.success(),
+        "status wrote to a read-only database"
+    );
+    let state = check(&report, "state");
+    assert_eq!(state["status"], "failed");
+    assert_eq!(state["path"], database.to_str().unwrap());
+    assert!(
+        state["detail"]
+            .as_str()
+            .unwrap()
+            .contains("cannot write to"),
+        "{state}"
+    );
+    assert_eq!(capability(&report, "status")["status"], "unavailable");
+    assert_eq!(capability(&report, "github")["status"], "available");
+    assert_eq!(fs::read(&database).unwrap(), bytes);
+}
+
 #[test]
 fn a_state_directory_that_rejects_new_files_is_reported() {
     let environment = Environment::healthy();

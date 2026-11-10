@@ -93,8 +93,9 @@ pub enum Run {
 pub enum StateProbe {
     /// Neither `XDG_STATE_HOME` nor `HOME` gives a location.
     NoLocation,
-    /// The database's directory, or the nearest existing ancestor that would
-    /// hold it, does not accept new files.
+    /// The database file does not accept writes, or its directory (or the
+    /// nearest existing ancestor that would hold it) does not accept new
+    /// files. `path` is whichever of them was refused.
     Unwritable { path: PathBuf, reason: String },
     /// The database exists but could not be read.
     Unreadable { path: PathBuf, reason: String },
