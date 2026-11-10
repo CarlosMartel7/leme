@@ -117,6 +117,9 @@ Only read operations are used. Outside Herdr, or when Herdr does not know an ID
 or places a pane somewhere other than the supplied IDs say, the command exits
 with an error.
 
+The Herdr plugin in `plugin/` opens this report in a pane next to the pane it
+is invoked from. See [the Herdr plugin](docs/herdr-plugin.md) to link and use it.
+
 ## Open the dashboard
 
 Run from a Git checkout, in a terminal or a Herdr pane:
