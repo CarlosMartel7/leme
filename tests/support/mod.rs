@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 static NEXT_DIRECTORY: AtomicUsize = AtomicUsize::new(0);
 
@@ -143,6 +143,12 @@ impl Leme {
         self
     }
 
+    /// Removes an inherited environment variable from the process.
+    pub fn env_remove(mut self, name: &str) -> Self {
+        self.command.env_remove(name);
+        self
+    }
+
     /// The prepared process, for callers that start it themselves.
     pub fn into_command(self) -> Command {
         self.command
@@ -234,4 +240,157 @@ impl Toolbox {
 /// Quotes `text` as one `/bin/sh` word.
 pub fn shell_quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', "'\\''"))
+}
+
+/// The variables Herdr sets in the processes it starts. Tests remove them
+/// so a test run inside Herdr never reaches the developer's session.
+pub const HERDR_VARIABLES: [&str; 6] = [
+    "HERDR_BIN_PATH",
+    "HERDR_ENV",
+    "HERDR_PANE_ID",
+    "HERDR_SOCKET_PATH",
+    "HERDR_TAB_ID",
+    "HERDR_WORKSPACE_ID",
+];
+
+/// A scripted stand-in for the `herdr` CLI.
+///
+/// Each request is answered from files under `responses/`, keyed by its
+/// first two arguments (`pane-current`, `workspace-list`, `tab-list`,
+/// `status-server`, `api-schema`) or `version` for `--version`. A new fake
+/// answers like a healthy Herdr whose server runs the tested protocol, and
+/// whose workspace, tab and pane lists are empty until a test fills them.
+/// Every invocation's arguments are recorded one per line, so tests can
+/// check that each value arrived as a single argument.
+pub struct FakeHerdr {
+    directory: PathBuf,
+    executable: PathBuf,
+}
+
+/// A recorded invocation's arguments end with this line.
+const CALL_END: &str = "--end-of-call--";
+
+impl FakeHerdr {
+    /// Writes the fake to `directory`/herdr. The directory may contain
+    /// spaces or quotes.
+    pub fn new(directory: &Path) -> Self {
+        fs::create_dir_all(directory.join("responses")).expect("create fake Herdr");
+        let executable = directory.join("herdr");
+        let quoted = shell_quote(directory.to_str().expect("UTF-8 fake Herdr path"));
+        let cat = shell_quote(system_executable("cat").to_str().unwrap());
+        let sleep = shell_quote(system_executable("sleep").to_str().unwrap());
+        let script = format!(
+            "#!/bin/sh\n\
+             dir={quoted}\n\
+             {{ for argument in \"$@\"; do printf '%s\\n' \"$argument\"; done; \
+             printf '%s\\n' {CALL_END}; }} >> \"$dir/calls\"\n\
+             case \"$1\" in --version) key=version ;; *) key=\"$1-$2\" ;; esac\n\
+             response=\"$dir/responses/$key\"\n\
+             if [ -f \"$response.hang\" ]; then exec {sleep} 30; fi\n\
+             if [ ! -f \"$response.stdout\" ] && [ ! -f \"$response.stderr\" ]; then\n\
+             printf 'unexpected request: %s\\n' \"$*\" >&2; exit 64; fi\n\
+             if [ -f \"$response.stderr\" ]; then {cat} \"$response.stderr\" >&2; fi\n\
+             if [ -f \"$response.stdout\" ]; then {cat} \"$response.stdout\"; fi\n\
+             if [ -f \"$response.status\" ]; then exit \"$({cat} \"$response.status\")\"; fi\n"
+        );
+        fs::write(&executable, script).expect("write fake Herdr");
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))
+            .expect("make fake Herdr executable");
+        let fake = Self {
+            directory: directory.to_path_buf(),
+            executable,
+        };
+        fake.respond("version", "herdr 0.9.5");
+        fake.respond("status-server", &herdr_server_status());
+        fake.respond(
+            "api-schema",
+            &herdr_schema(leme::diagnostics::TESTED_HERDR_PROTOCOL),
+        );
+        fake.respond("workspace-list", &herdr_reply(json!({"workspaces": []})));
+        fake.respond("tab-list", &herdr_reply(json!({"tabs": []})));
+        fake
+    }
+
+    /// The fake executable.
+    pub fn executable(&self) -> &Path {
+        &self.executable
+    }
+
+    fn response(&self, key: &str, extension: &str) -> PathBuf {
+        self.directory
+            .join("responses")
+            .join(format!("{key}.{extension}"))
+    }
+
+    fn clear(&self, key: &str) {
+        for extension in ["stdout", "stderr", "status", "hang"] {
+            let _ = fs::remove_file(self.response(key, extension));
+        }
+    }
+
+    /// Answers request `key` by printing `stdout` and succeeding.
+    pub fn respond(&self, key: &str, stdout: &str) {
+        self.clear(key);
+        fs::write(self.response(key, "stdout"), format!("{stdout}\n")).expect("write response");
+    }
+
+    /// Answers request `key` by printing `stderr` and exiting with `status`.
+    pub fn fail(&self, key: &str, status: i32, stderr: &str) {
+        self.clear(key);
+        fs::write(self.response(key, "stderr"), format!("{stderr}\n")).expect("write response");
+        fs::write(self.response(key, "status"), status.to_string()).expect("write response");
+    }
+
+    /// Makes request `key` hang until it is stopped.
+    pub fn hang(&self, key: &str) {
+        self.clear(key);
+        fs::write(self.response(key, "hang"), "").expect("write response");
+    }
+
+    /// The arguments of every invocation, in order.
+    pub fn calls(&self) -> Vec<Vec<String>> {
+        let text = fs::read_to_string(self.directory.join("calls")).unwrap_or_default();
+        let mut calls = Vec::new();
+        let mut current = Vec::new();
+        for line in text.lines() {
+            if line == CALL_END {
+                calls.push(std::mem::take(&mut current));
+            } else {
+                current.push(line.to_owned());
+            }
+        }
+        calls
+    }
+}
+
+/// A successful Herdr reply wrapping `result`, as the CLI prints it.
+pub fn herdr_reply(result: Value) -> String {
+    json!({"id": "cli:test", "result": result}).to_string()
+}
+
+/// A Herdr error reply, as the CLI prints it on stderr.
+pub fn herdr_error(code: &str, message: &str) -> String {
+    json!({"id": "cli:test", "error": {"code": code, "message": message}}).to_string()
+}
+
+/// `herdr status server --json` from a running, compatible server.
+pub fn herdr_server_status() -> String {
+    json!({
+        "status": "running",
+        "running": true,
+        "version": "0.9.5",
+        "protocol": leme::diagnostics::TESTED_HERDR_PROTOCOL,
+        "compatible": true,
+        "restart_needed": false,
+    })
+    .to_string()
+}
+
+/// `herdr api schema --json` listing every operation Leme uses.
+pub fn herdr_schema(protocol: u64) -> String {
+    let requests: Vec<_> = leme::diagnostics::HERDR_OPERATIONS
+        .iter()
+        .map(|method| json!({"properties": {"method": {"const": method, "type": "string"}}}))
+        .collect();
+    json!({"protocol": protocol, "schemas": {"request": {"oneOf": requests}}}).to_string()
 }
