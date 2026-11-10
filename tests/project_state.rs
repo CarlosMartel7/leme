@@ -33,6 +33,9 @@ fn project_count(root: &Path) -> i64 {
         .expect("count projects")
 }
 
+/// The schema version of a fully migrated database.
+const LATEST_SCHEMA: i64 = 2;
+
 fn schema_version(connection: &Connection) -> i64 {
     connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
@@ -197,7 +200,7 @@ fn concurrent_first_access_resolves_to_one_project() {
         let id = project_id(&statuses[0]);
         assert!(statuses.iter().all(|status| project_id(status) == id));
         assert_eq!(project_count(root.path()), 1);
-        assert_eq!(schema_version(&connect(root.path())), 1);
+        assert_eq!(schema_version(&connect(root.path())), LATEST_SCHEMA);
     }
 }
 
@@ -299,7 +302,7 @@ fn a_failed_migration_rolls_back_and_can_be_retried() {
     let status = status_json(&repository, root.path());
 
     assert_eq!(status["tasks"], json!([]));
-    assert_eq!(schema_version(&connection), 1);
+    assert_eq!(schema_version(&connection), LATEST_SCHEMA);
 }
 
 #[test]

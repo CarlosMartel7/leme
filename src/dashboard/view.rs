@@ -5,6 +5,7 @@
 //! and messages wrap instead of being cut off.
 
 use std::path::Path;
+use std::time::Duration;
 
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -12,8 +13,9 @@ use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph, Wrap};
 
-use super::app::{App, Load};
+use super::app::{App, Load, TimerStatus};
 use super::{Snapshot, clock};
+use crate::time::pomodoro::Phase;
 
 /// Width of the labels in the project header, including the gap after them.
 const LABEL_WIDTH: usize = 10;
@@ -34,9 +36,10 @@ pub fn render(app: &App, frame: &mut Frame) {
         Some(_) => HEADER_HEIGHT,
         None => EMPTY_HEADER_HEIGHT,
     };
-    let [header, body, status, footer] = Layout::vertical([
+    let [header, body, timer, status, footer] = Layout::vertical([
         Constraint::Length(header_height),
         Constraint::Min(0),
+        Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
     ])
@@ -47,6 +50,7 @@ pub fn render(app: &App, frame: &mut Frame) {
         Some(snapshot) => render_tasks(snapshot, app.selected(), frame, body),
         None => render_placeholder(app.load(), frame, body),
     }
+    render_timer(app, frame, timer);
     render_status(app, frame, status);
     render_footer(frame, footer);
     if app.help_visible() {
@@ -156,6 +160,63 @@ fn render_placeholder(load: &Load, frame: &mut Frame, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
+/// One line with the focus/break timer and the keys that act on it.
+fn render_timer(app: &App, frame: &mut Frame, area: Rect) {
+    if !app.timer_ready() {
+        frame.render_widget(Paragraph::new(""), area);
+        return;
+    }
+    let width = usize::from(area.width);
+    let (state, hints) = match app.timer() {
+        None => (Span::raw("Timer"), "f focus  b break"),
+        Some(timer) => timer_state(timer),
+    };
+    let line = match app.timer_error() {
+        Some(error) => {
+            let room = width.saturating_sub(state.width() + 2);
+            Line::from(vec![
+                state,
+                Span::raw("  "),
+                Span::raw(keep_start(error, room)).red(),
+            ])
+        }
+        None => Line::from(vec![state, Span::raw("  "), Span::raw(hints).dim()]),
+    };
+    frame.render_widget(Paragraph::new(line), area);
+}
+
+/// The timer's state, styled, and the keys that act on it.
+fn timer_state(timer: TimerStatus) -> (Span<'static>, &'static str) {
+    let label = timer.mode.label();
+    let remaining = countdown(timer.remaining);
+    match timer.phase {
+        Phase::Running => (
+            Span::raw(format!("{label} {remaining}")).green().bold(),
+            "p pause  x cancel",
+        ),
+        Phase::Paused => (
+            Span::raw(format!("{label} {remaining} paused")).yellow(),
+            "p resume  x cancel",
+        ),
+        Phase::Elapsed => (
+            Span::raw(format!("{label} done")).magenta().bold(),
+            "f focus  b break  x clear",
+        ),
+    }
+}
+
+/// `remaining` as `mm:ss`, or `h:mm:ss` from an hour up, rounded up to the
+/// next second so the display reaches `00:00` only when time runs out.
+fn countdown(remaining: Duration) -> String {
+    let seconds = remaining.as_secs() + u64::from(remaining.subsec_nanos() > 0);
+    let (hours, minutes, seconds) = (seconds / 3600, seconds / 60 % 60, seconds % 60);
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes:02}:{seconds:02}")
+    }
+}
+
 /// One line describing the most recent collection.
 fn render_status(app: &App, frame: &mut Frame, area: Rect) {
     let width = usize::from(area.width);
@@ -184,6 +245,9 @@ fn render_help(frame: &mut Frame, area: Rect) {
     let rows = [
         ("↑ k / ↓ j", "select a task"),
         ("g / G", "first / last task"),
+        ("f / b", "start focus / break"),
+        ("p Space", "pause / resume timer"),
+        ("x", "cancel the timer"),
         ("r", "refresh"),
         ("?", "close this help"),
         ("q Esc", "quit"),

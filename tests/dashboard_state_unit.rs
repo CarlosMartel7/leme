@@ -36,6 +36,7 @@ fn snapshot(task_count: usize) -> Snapshot {
                 worktree: PathBuf::from(format!("/work/leme-task-{index}")),
             })
             .collect(),
+        timer: None,
     }
 }
 
@@ -101,6 +102,11 @@ fn refresh_requests_only_a_read_only_collection() {
     // an agent turn, fails to compile until this test decides about it.
     match effect {
         Effect::Collect => {}
+        // Timer writes only touch Leme's own state database, and only timer
+        // keys request them.
+        Effect::StartTimer { .. } | Effect::SaveTimer { .. } | Effect::ClearTimer { .. } => {
+            panic!("refresh requested a timer write: {effect:?}")
+        }
     }
     assert_eq!(app.load(), &Load::Loading);
     assert_eq!(app.snapshot(), Some(&snapshot(0)), "keeps showing old data");

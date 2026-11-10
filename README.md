@@ -72,6 +72,27 @@ The local time appears in the top-right corner in the project's
 system cannot report it. It is read from the C library, like `date`, and
 keeps updating while the project loads or refreshes.
 
+### Focus timer
+
+Once the project has loaded, the line above the status shows a focus/break
+timer and the keys that apply:
+
+- `f` starts a 25-minute focus interval and `b` a 5-minute break.
+- `p` or `Space` pauses and resumes; `x` cancels the interval.
+- When the time runs out the line shows, for example, `Focus done` until you
+  start another interval or press `x`. Leme sends no notification.
+
+A running or paused interval must be cancelled before starting a new one. The
+countdown uses a clock that system-time changes do not affect, and keeps
+counting while the machine is suspended.
+
+The timer is saved in Leme's state database for the project, so every
+checkout and every open dashboard of the project share one timer. Closing the
+dashboard keeps it: a paused interval reopens paused with the same time left,
+a running one reopens with the time that passed deducted, and one that ran out
+meanwhile reopens as done. If a timer is already running when another
+dashboard starts one, that dashboard shows the existing timer instead.
+
 Refreshing reads Git and Leme's state database only. It does not change the
 repository and does not start an agent. The dashboard needs an interactive
 terminal and exits with an error when its input or output is redirected.
@@ -97,7 +118,8 @@ configuration found only in a linked worktree. See [configuration](docs/configur
 
 ## Local state
 
-Leme stores project IDs and task associations in a local SQLite file:
+Leme stores project IDs, task associations and each project's focus timer in
+a local SQLite file:
 
 - `$XDG_STATE_HOME/leme/leme.db` when XDG_STATE_HOME is absolute.
 - Otherwise, `$HOME/.local/state/leme/leme.db`.

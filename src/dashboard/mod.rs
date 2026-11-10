@@ -6,8 +6,9 @@
 //!   preferences and the state database. It only reads Git and never starts
 //!   an agent.
 //! - [`app::App`] holds what the screen shows and reacts to input. It never
-//!   touches the terminal or collects data itself; it asks for a collection by
-//!   returning [`app::Effect::Collect`].
+//!   touches the terminal, reads a clock or collects data itself; it asks for
+//!   a collection or a timer write by returning an [`app::Effect`], and
+//!   learns the time from the inputs it is given.
 //! - [`view::render`] draws an `App` into a Ratatui frame, with the local
 //!   time from [`clock`] in its header.
 //!
@@ -23,6 +24,7 @@ use std::path::Path;
 use crate::config::{ConfigError, Preferences};
 use crate::git::{self, Checkout, DiscoveryError};
 use crate::state::{StateError, Store, Task};
+use crate::time::pomodoro::Saved;
 
 /// Everything the dashboard shows about a project at one moment.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +37,9 @@ pub struct Snapshot {
     pub preferences: Preferences,
     /// Tasks registered to the project, ordered by ID.
     pub tasks: Vec<Task>,
+    /// The project's saved focus/break timer. The app restores it from the
+    /// first snapshot only; afterwards the timer on screen is the reference.
+    pub timer: Option<Saved>,
 }
 
 /// Reads a snapshot of the project containing `directory`.
@@ -44,12 +49,15 @@ pub struct Snapshot {
 pub fn collect(directory: &Path) -> Result<Snapshot, CollectError> {
     let checkout = git::discover(directory)?;
     let preferences = Preferences::load(&checkout.repository)?;
-    let project = Store::open_default()?.project(&checkout.repository)?;
+    let mut store = Store::open_default()?;
+    let project = store.project(&checkout.repository)?;
+    let timer = store.timer(&project.id)?;
     Ok(Snapshot {
         project_id: project.id,
         checkout,
         preferences,
         tasks: project.tasks,
+        timer,
     })
 }
 

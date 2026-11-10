@@ -4,8 +4,10 @@
 //! `MIGRATIONS`, and `PRAGMA user_version` records how many of them have run.
 
 mod project;
+mod timer;
 
 pub use project::{Project, Task};
+pub use timer::StartOutcome;
 
 use std::env;
 use std::fmt;
@@ -16,7 +18,10 @@ use std::time::Duration;
 
 use rusqlite::{Connection, TransactionBehavior};
 
-const MIGRATIONS: [&str; 1] = [include_str!("migrations/001_project.sql")];
+const MIGRATIONS: [&str; 2] = [
+    include_str!("migrations/001_project.sql"),
+    include_str!("migrations/002_timer.sql"),
+];
 
 /// How long to wait for another Leme process to finish writing.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
