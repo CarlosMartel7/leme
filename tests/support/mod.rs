@@ -7,6 +7,7 @@ pub mod pty;
 
 use std::env;
 use std::fs;
+use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -174,4 +175,63 @@ pub fn failure_message(output: &Output) -> String {
     assert_eq!(output.status.code(), Some(1), "unexpected exit status");
     assert!(output.stdout.is_empty(), "failure printed to stdout");
     String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+/// The real executable called `name` on the test's own `PATH`.
+pub fn system_executable(name: &str) -> PathBuf {
+    leme::diagnostics::find_executable(name, env::var_os("PATH").as_deref())
+        .unwrap_or_else(|| panic!("{name} is not installed"))
+}
+
+/// A directory of controlled executables, used as the entire `PATH` of a
+/// `leme` process so that only the tools a test provides can be found.
+pub struct Toolbox {
+    path: PathBuf,
+}
+
+impl Toolbox {
+    /// Creates an empty toolbox at `path`.
+    pub fn new(path: &Path) -> Self {
+        fs::create_dir_all(path).expect("create toolbox");
+        Self {
+            path: path.to_path_buf(),
+        }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// The `PATH` value that makes only this toolbox visible.
+    pub fn search_path(&self) -> &str {
+        self.path.to_str().expect("UTF-8 toolbox path")
+    }
+
+    /// Adds an executable `/bin/sh` script called `name` running `body`.
+    /// Scripts see only this toolbox on `PATH`, so they should call other
+    /// programs by absolute path, for example through [`system_executable`].
+    pub fn script(&self, name: &str, body: &str) -> PathBuf {
+        let path = self.path.join(name);
+        fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("write script");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("make executable");
+        path
+    }
+
+    /// Adds a tool called `name` that prints `output` and succeeds,
+    /// whatever its arguments.
+    pub fn tool(&self, name: &str, output: &str) -> PathBuf {
+        self.script(name, &format!("printf '%s\\n' {}", shell_quote(output)))
+    }
+
+    /// Makes the real executable called `name` available in the toolbox.
+    pub fn link(&self, name: &str) -> PathBuf {
+        let path = self.path.join(name);
+        symlink(system_executable(name), &path).expect("link executable");
+        path
+    }
+}
+
+/// Quotes `text` as one `/bin/sh` word.
+pub fn shell_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
 }

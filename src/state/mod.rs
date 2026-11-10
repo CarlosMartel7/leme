@@ -14,9 +14,12 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rusqlite::{Connection, TransactionBehavior};
+use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 
 const MIGRATIONS: [&str; 1] = [include_str!("migrations/001_project.sql")];
+
+/// The schema version this Leme creates and understands.
+pub const SCHEMA_VERSION: usize = MIGRATIONS.len();
 
 /// How long to wait for another Leme process to finish writing.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
@@ -108,8 +111,33 @@ impl From<rusqlite::Error> for Failure {
     }
 }
 
+/// Reads the schema version of the database at `path` without creating,
+/// migrating or writing to it. Returns `None` when no database exists yet.
+pub fn existing_schema_version(path: &Path) -> Result<Option<i64>, StateError> {
+    if !path
+        .try_exists()
+        .map_err(|source| StateError::Inaccessible {
+            path: path.to_path_buf(),
+            source,
+        })?
+    {
+        return Ok(None);
+    }
+    let database = |source| StateError::Database {
+        path: path.to_path_buf(),
+        source,
+    };
+    let connection =
+        Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(database)?;
+    connection.busy_timeout(BUSY_TIMEOUT).map_err(database)?;
+    connection
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map(Some)
+        .map_err(database)
+}
+
 /// `$XDG_STATE_HOME/leme/leme.db`, or `~/.local/state/leme/leme.db`.
-fn default_path() -> Option<PathBuf> {
+pub fn default_path() -> Option<PathBuf> {
     // The XDG specification requires ignoring a relative path.
     let directory = env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
@@ -129,6 +157,8 @@ pub enum StateError {
     NoStateDirectory,
     /// The directory holding the database could not be created.
     Directory { path: PathBuf, source: io::Error },
+    /// The database location could not be examined.
+    Inaccessible { path: PathBuf, source: io::Error },
     /// SQLite reported a failure.
     Database {
         path: PathBuf,
@@ -152,6 +182,9 @@ impl fmt::Display for StateError {
             Self::Directory { path, source } => {
                 write!(f, "cannot create {}: {source}", path.display())
             }
+            Self::Inaccessible { path, source } => {
+                write!(f, "cannot access {}: {source}", path.display())
+            }
             Self::Database { path, source } => {
                 write!(f, "cannot use {}: {source}", path.display())
             }
@@ -172,7 +205,7 @@ impl fmt::Display for StateError {
 impl std::error::Error for StateError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Directory { source, .. } => Some(source),
+            Self::Directory { source, .. } | Self::Inaccessible { source, .. } => Some(source),
             Self::Database { source, .. } => Some(source),
             Self::NoStateDirectory | Self::NewerSchema { .. } => None,
         }
