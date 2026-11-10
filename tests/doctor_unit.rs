@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use leme::config::{Agent, Preferences};
 use leme::diagnostics::{
-    CapabilityStatus, CheckStatus, HERDR_OPERATIONS, Probes, Report, Run, StateProbe,
+    CapabilityStatus, CheckStatus, HERDR_OPERATIONS, MINIMUM_RUST, Probes, Report, Run, StateProbe,
     TESTED_HERDR_PROTOCOL, ToolProbe, Version, classify,
 };
 use leme::git::Checkout;
@@ -427,6 +427,84 @@ fn an_unrecognized_version_is_uncertain_only_where_a_minimum_applies() {
     }
 }
 
+/// Regression: doctor accepted Rust 1.85, which cannot build the locked
+/// dependencies.
+#[test]
+fn rust_older_than_the_locked_dependencies_need_is_unsupported() {
+    let mut probes = healthy();
+    probes.rustc = found("rustc", "rustc 1.85.0 (4d91de4e4 2025-02-17)\n");
+    probes.cargo = found("cargo", "cargo 1.85.0 (d73d2caf9 2024-12-31)\n");
+
+    let report = classify(&probes);
+
+    for id in ["rustc", "cargo"] {
+        assert_eq!(check_status(&report, id), CheckStatus::Failed, "{id}");
+        assert!(
+            correction(&report, id).contains(&format!("{MINIMUM_RUST} or later")),
+            "{id}"
+        );
+    }
+}
+
+#[test]
+fn rust_at_the_minimum_version_is_supported() {
+    let mut probes = healthy();
+    let line = format!("rustc {MINIMUM_RUST} (0000000 2025-01-01)\n");
+    probes.rustc = found("rustc", &line);
+
+    assert_eq!(check_status(&classify(&probes), "rustc"), CheckStatus::Ok);
+}
+
+/// The reported minimum must cover every locked dependency built for this
+/// platform, as Cargo records them.
+#[test]
+fn the_minimum_rust_covers_every_locked_dependency() {
+    let rustc = std::process::Command::new("rustc")
+        .arg("-vV")
+        .output()
+        .expect("run rustc");
+    let host = String::from_utf8(rustc.stdout)
+        .unwrap()
+        .lines()
+        .find_map(|line| line.strip_prefix("host: ").map(str::to_owned))
+        .expect("host triple");
+    let metadata = std::process::Command::new(env!("CARGO"))
+        .args(["metadata", "--locked", "--offline", "--format-version", "1"])
+        .args(["--filter-platform", &host])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("run cargo metadata");
+    assert!(
+        metadata.status.success(),
+        "{}",
+        String::from_utf8_lossy(&metadata.stderr)
+    );
+    let metadata: serde_json::Value = serde_json::from_slice(&metadata.stdout).unwrap();
+    let used: Vec<&str> = metadata["resolve"]["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|node| node["id"].as_str().unwrap())
+        .collect();
+
+    let (required, package) = metadata["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|package| used.contains(&package["id"].as_str().unwrap()))
+        .filter_map(|package| {
+            let version = Version::find(package["rust_version"].as_str()?)?;
+            Some((version, package["name"].as_str().unwrap().to_owned()))
+        })
+        .max()
+        .expect("dependencies declare a Rust version");
+
+    assert!(
+        MINIMUM_RUST >= required,
+        "{package} needs Rust {required}, but doctor accepts {MINIMUM_RUST}"
+    );
+}
+
 #[test]
 fn build_requirements_never_affect_an_action() {
     let mut probes = healthy();
@@ -439,7 +517,7 @@ fn build_requirements_never_affect_an_action() {
     assert_eq!(check_status(&report, "rustc"), CheckStatus::Failed);
     assert_eq!(
         detail(&report, "rustc"),
-        "version 1.84.1 is older than the required 1.85.0"
+        format!("version 1.84.1 is older than the required {MINIMUM_RUST}")
     );
     assert_eq!(check_status(&report, "cargo"), CheckStatus::Failed);
     assert_eq!(check_status(&report, "cc"), CheckStatus::Failed);

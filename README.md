@@ -12,7 +12,7 @@ whether the tools they will need are ready.
 
 ## Build and install
 
-You need Git on PATH, Rust/Cargo with support for edition 2024, and a C toolchain
+You need Git on PATH, Rust/Cargo 1.89 or later, and a C toolchain
 for the bundled SQLite dependency. A separate SQLite server is not required.
 
 From the repository root:

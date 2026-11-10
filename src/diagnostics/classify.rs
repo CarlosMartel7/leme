@@ -17,8 +17,17 @@ use crate::state;
 /// Oldest Git that supports `rev-parse --path-format`, which discovery uses.
 pub const MINIMUM_GIT: Version = Version::new(2, 31, 0);
 
-/// Oldest Rust compiler that supports edition 2024.
-pub const MINIMUM_RUST: Version = Version::new(1, 85, 0);
+/// Oldest Rust compiler that can build Leme, taken from `rust-version` in
+/// `Cargo.toml`. That setting must cover every locked dependency's own
+/// minimum, which a test checks.
+pub const MINIMUM_RUST: Version = Version::parse_const(env!("CARGO_PKG_RUST_VERSION"));
+
+/// The manual correction for a missing or outdated Rust toolchain.
+const INSTALL_RUST: &str = concat!(
+    "Install Rust ",
+    env!("CARGO_PKG_RUST_VERSION"),
+    " or later with rustup (https://rustup.rs)."
+);
 
 /// The Herdr API protocol Leme was tested against.
 pub const TESTED_HERDR_PROTOCOL: u64 = 22;
@@ -47,6 +56,31 @@ pub struct Version {
 }
 
 impl Version {
+    /// Parses `major.minor` or `major.minor.patch` while compiling, so a
+    /// malformed version stops the build instead of reaching users.
+    const fn parse_const(text: &str) -> Self {
+        let bytes = text.as_bytes();
+        let mut parts = [0u64; 3];
+        let mut part = 0;
+        let mut digits = 0;
+        let mut index = 0;
+        while index < bytes.len() {
+            let byte = bytes[index];
+            if byte == b'.' {
+                assert!(digits > 0 && part < 2, "malformed version");
+                part += 1;
+                digits = 0;
+            } else {
+                assert!(byte.is_ascii_digit(), "malformed version");
+                parts[part] = parts[part] * 10 + (byte - b'0') as u64;
+                digits += 1;
+            }
+            index += 1;
+        }
+        assert!(digits > 0 && part >= 1, "malformed version");
+        Self::new(parts[0], parts[1], parts[2])
+    }
+
     pub const fn new(major: u64, minor: u64, patch: u64) -> Self {
         Self {
             major,
@@ -155,7 +189,7 @@ const CARGO: Tool = Tool {
     name: "Cargo",
     command: "cargo --version",
     minimum: Some(MINIMUM_RUST),
-    install: "Install Rust 1.85 or later with rustup (https://rustup.rs).",
+    install: INSTALL_RUST,
 };
 
 const RUSTC: Tool = Tool {
@@ -163,7 +197,7 @@ const RUSTC: Tool = Tool {
     name: "Rust compiler",
     command: "rustc --version",
     minimum: Some(MINIMUM_RUST),
-    install: "Install Rust 1.85 or later with rustup (https://rustup.rs).",
+    install: INSTALL_RUST,
 };
 
 const CC: Tool = Tool {
