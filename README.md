@@ -1,14 +1,13 @@
 # Leme
 
 Leme is a Rust command-line project for organizing AI-assisted development in
-Linux inside WSL. It currently has two commands: `leme status` identifies the
-Git project and checkout, loads project preferences, and reports locally
-registered tasks; `leme doctor` checks which Leme actions this installation
-supports.
 
-The broader plan includes Herdr workspaces, agent sessions, and a terminal
-dashboard. Those integrations are not implemented yet; `leme doctor` only checks
-whether the tools they will need are ready.
+Linux inside WSL. `leme status` identifies the Git project and checkout, loads
+project preferences, and reports locally registered tasks. `leme doctor` checks which Leme actions this installation
+supports. `leme dashboard` shows the same project in a full-screen terminal view.
+
+The broader plan includes Herdr workspaces, agent sessions, and live agent data
+in the dashboard. Those integrations are not implemented yet.
 
 ## Build and install
 
@@ -88,6 +87,23 @@ for writing to confirm `leme status` can update it, but nothing is written, and
 the database is never created or migrated. Each tool has `--timeout` seconds (default 5) to answer.
 The exit status is 0 whenever the report is printed, since missing optional
 tools are part of the diagnosis.
+## Open the dashboard
+
+Run from a Git checkout, in a terminal or a Herdr pane:
+
+```sh
+leme dashboard
+```
+
+The dashboard shows the project ID, the current branch and checkout, the
+project preferences, and the registered tasks, or a message when there are
+none. Keys: `?` shows help, `r` refreshes, `↑`/`↓` (or `k`/`j`) select a task,
+and `q` or `Esc` quits and returns the terminal to normal. If the project
+cannot be loaded, the error is shown on screen and `r` retries.
+
+Refreshing reads Git and Leme's state database only. It does not change the
+repository and does not start an agent. The dashboard needs an interactive
+terminal and exits with an error when its input or output is redirected.
 
 ## Preferences
 
@@ -147,3 +163,12 @@ cargo clippy --locked --all-targets -- -D warnings
 
 Tests use disposable Git repositories and isolated SQLite state. Add `--offline`
 to Cargo test/Clippy commands when dependencies are already cached.
+
+The dashboard's end-to-end tests run it in a real pseudo-terminal and are
+skipped by `cargo test`. Run them on Linux or WSL with:
+
+```sh
+cargo test --locked --test dashboard_e2e -- --ignored --test-threads=1
+```
+
+The harness is described in `tests/support/pty.rs`.

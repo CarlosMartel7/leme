@@ -1,6 +1,7 @@
 //! Command-line interface and command dispatch.
 
 mod doctor;
+mod dashboard;
 mod status;
 
 use std::fmt;
@@ -52,6 +53,12 @@ enum Command {
     /// directory accepts new files. Missing tools are part of the diagnosis,
     /// so the exit status is 0 whenever the report is printed.
     Doctor(doctor::DoctorArgs),
+    /// Open the project dashboard in this terminal
+    ///
+    /// Shows the project, its checkout and its registered tasks. Press ? for
+    /// keys, r to refresh and q to quit. Refreshing only reads Git and Leme's
+    /// state database; it never changes the repository or starts an agent.
+    Dashboard(dashboard::DashboardArgs),
 }
 
 /// A failure to report to the user before exiting.
@@ -69,6 +76,10 @@ pub enum Error {
     Json(serde_json::Error),
     /// The result could not be written to standard output.
     Output(io::Error),
+    /// The dashboard was started without an interactive terminal.
+    NotATerminal,
+    /// The terminal could not be set up, read or drawn on.
+    Terminal(io::Error),
 }
 
 impl fmt::Display for Error {
@@ -82,6 +93,11 @@ impl fmt::Display for Error {
             Self::State(error) => error.fmt(f),
             Self::Json(error) => write!(f, "cannot encode the result as JSON: {error}"),
             Self::Output(error) => write!(f, "cannot write the result: {error}"),
+            Self::NotATerminal => write!(
+                f,
+                "the dashboard needs an interactive terminal; run it in a terminal or Herdr pane"
+            ),
+            Self::Terminal(error) => write!(f, "cannot use the terminal: {error}"),
         }
     }
 }
@@ -89,11 +105,14 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::CurrentDirectory(error) | Self::Output(error) => Some(error),
+            Self::CurrentDirectory(error) | Self::Output(error) | Self::Terminal(error) => {
+                Some(error)
+            }
             Self::Discovery(error) => Some(error),
             Self::Config(error) => Some(error),
             Self::State(error) => Some(error),
             Self::Json(error) => Some(error),
+            Self::NotATerminal => None,
         }
     }
 }
@@ -123,5 +142,6 @@ pub fn run() -> Result<(), Error> {
     match Cli::parse().command {
         Command::Status(args) => status::run(&args),
         Command::Doctor(args) => doctor::run(&args),
+        Command::Dashboard(args) => dashboard::run(&args),
     }
 }

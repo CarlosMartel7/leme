@@ -3,6 +3,8 @@
 //! Each test target compiles this module separately and uses only part of it.
 #![allow(dead_code)]
 
+pub mod pty;
+
 use std::env;
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
@@ -139,6 +141,11 @@ impl Leme {
     pub fn env(mut self, name: &str, value: &str) -> Self {
         self.command.env(name, value);
         self
+    }
+
+    /// The prepared process, for callers that start it themselves.
+    pub fn into_command(self) -> Command {
+        self.command
     }
 
     /// Runs the process and captures its result.
