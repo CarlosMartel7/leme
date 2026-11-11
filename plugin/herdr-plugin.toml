@@ -1,0 +1,39 @@
+# Herdr plugin manifest for Leme. See docs/herdr-plugin.md.
+#
+# Herdr runs each command as an argument list in this directory. The shell
+# snippets below only expand Herdr's variables; every value is passed as a
+# separate, double-quoted argument, so IDs and paths are never re-parsed.
+
+id = "leme"
+name = "Leme"
+version = "0.1.0"
+description = "Organize AI-assisted work on a project"
+min_herdr_version = "0.9.5"
+platforms = ["linux"]
+
+# Opens the context pane for the pane the action was invoked from.
+#
+# The action's own HERDR_PANE_ID is the invoking pane. A plugin pane gets a
+# new pane ID of its own, so the invoking ID is handed to it explicitly in
+# LEME_INVOKING_PANE instead of being looked up from focus later.
+[[actions]]
+id = "context"
+title = "Leme: show the Herdr context"
+contexts = ["pane"]
+command = [
+    "sh", "-c",
+    'exec "$HERDR_BIN_PATH" plugin pane open --plugin "$HERDR_PLUGIN_ID" --entrypoint context --target-pane "$HERDR_PANE_ID" --direction right --env "LEME_INVOKING_PANE=$HERDR_PANE_ID" --focus',
+]
+
+# Shows `leme herdr context` and stays open until Enter is pressed. Opened
+# without the action, it describes the pane it runs in. It splits the
+# invoking pane, because Herdr opens overlay and popup panes over whichever
+# pane is active instead of a named one.
+[[panes]]
+id = "context"
+title = "Leme context"
+placement = "split"
+command = [
+    "sh", "-c",
+    'leme herdr context ${LEME_INVOKING_PANE:+--pane "$LEME_INVOKING_PANE"}; printf "\nPress Enter to close. "; read -r _',
+]
