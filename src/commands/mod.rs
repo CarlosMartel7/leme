@@ -1,16 +1,19 @@
 //! Command-line interface and command dispatch.
 
-mod doctor;
 mod dashboard;
+mod doctor;
+mod herdr_context;
 mod status;
 
 use std::fmt;
 use std::io;
+use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 
 use crate::config::ConfigError;
 use crate::git::DiscoveryError;
+use crate::herdr::HerdrError;
 use crate::state::StateError;
 
 #[derive(Debug, Parser)]
@@ -59,6 +62,26 @@ enum Command {
     /// keys, r to refresh and q to quit. Refreshing only reads Git and Leme's
     /// state database; it never changes the repository or starts an agent.
     Dashboard(dashboard::DashboardArgs),
+
+    /// Inspect how Herdr sees this Leme process
+    #[command(subcommand)]
+    Herdr(HerdrCommand),
+}
+
+#[derive(Debug, Subcommand)]
+enum HerdrCommand {
+    /// Show the Herdr workspace, tab and pane this command was run from
+    ///
+    /// Herdr gives every process in a pane the IDs of its workspace, tab and
+    /// pane. This command asks Herdr about those exact IDs, so it reports
+    /// where it was started even if focus has since moved elsewhere. Pass
+    /// --pane, --tab or --workspace to look up other IDs instead; they
+    /// replace the inherited IDs entirely.
+    ///
+    /// Herdr is first checked as leme doctor checks it, and nothing is sent
+    /// when a check fails. Only read operations are used: pane.current,
+    /// workspace.list and tab.list.
+    Context(herdr_context::ContextArgs),
 }
 
 /// A failure to report to the user before exiting.
@@ -80,6 +103,8 @@ pub enum Error {
     NotATerminal,
     /// The terminal could not be set up, read or drawn on.
     Terminal(io::Error),
+    /// Herdr could not be used or did not resolve the context.
+    Herdr(HerdrError),
 }
 
 impl fmt::Display for Error {
@@ -98,6 +123,7 @@ impl fmt::Display for Error {
                 "the dashboard needs an interactive terminal; run it in a terminal or Herdr pane"
             ),
             Self::Terminal(error) => write!(f, "cannot use the terminal: {error}"),
+            Self::Herdr(error) => error.fmt(f),
         }
     }
 }
@@ -112,6 +138,7 @@ impl std::error::Error for Error {
             Self::Config(error) => Some(error),
             Self::State(error) => Some(error),
             Self::Json(error) => Some(error),
+            Self::Herdr(error) => Some(error),
             Self::NotATerminal => None,
         }
     }
@@ -135,6 +162,28 @@ impl From<StateError> for Error {
     }
 }
 
+impl From<HerdrError> for Error {
+    fn from(error: HerdrError) -> Self {
+        Self::Herdr(error)
+    }
+}
+
+/// Longest timeout accepted for a tool or Herdr request, in seconds.
+const MAXIMUM_TIMEOUT: f64 = 600.0;
+
+/// Parses a `--timeout` value in seconds.
+fn parse_timeout(text: &str) -> Result<Duration, String> {
+    let seconds: f64 = text
+        .parse()
+        .map_err(|_| format!("`{text}` is not a number of seconds"))?;
+    if !(seconds > 0.0 && seconds <= MAXIMUM_TIMEOUT) {
+        return Err(format!(
+            "the timeout must be more than 0 and at most {MAXIMUM_TIMEOUT} seconds"
+        ));
+    }
+    Ok(Duration::from_secs_f64(seconds))
+}
+
 /// Parses the process arguments and runs the selected command.
 ///
 /// Invalid arguments and help requests exit through Clap.
@@ -143,5 +192,6 @@ pub fn run() -> Result<(), Error> {
         Command::Status(args) => status::run(&args),
         Command::Doctor(args) => doctor::run(&args),
         Command::Dashboard(args) => dashboard::run(&args),
+        Command::Herdr(HerdrCommand::Context(args)) => herdr_context::run(&args),
     }
 }

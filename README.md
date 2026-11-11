@@ -6,8 +6,10 @@ Linux inside WSL. `leme status` identifies the Git project and checkout, loads
 project preferences, and reports locally registered tasks. `leme doctor` checks which Leme actions this installation
 supports. `leme dashboard` shows the same project in a full-screen terminal view.
 
-The broader plan includes Herdr workspaces, agent sessions, and live agent data
-in the dashboard. Those integrations are not implemented yet.
+`leme herdr context` reports the Herdr workspace, tab and pane it was run from.
+
+The broader plan includes opening Herdr workspaces, agent sessions, and live
+agent data in the dashboard. Those integrations are not implemented yet.
 
 ## Build and install
 
@@ -87,6 +89,37 @@ for writing to confirm `leme status` can update it, but nothing is written, and
 the database is never created or migrated. Each tool has `--timeout` seconds (default 5) to answer.
 The exit status is 0 whenever the report is printed, since missing optional
 tools are part of the diagnosis.
+
+## Inspect the Herdr context
+
+Run from a Herdr pane:
+
+```sh
+leme herdr context
+leme herdr context --json
+leme herdr context --pane w1:p2
+```
+
+Herdr gives every process in a pane the IDs of its workspace, tab and pane
+(`HERDR_WORKSPACE_ID`, `HERDR_TAB_ID`, `HERDR_PANE_ID`). The command asks Herdr
+about those exact IDs and prints the workspace (with its label and checkout),
+the tab and the pane (with its directory), so the result stays correct even if
+you switch to another workspace while it runs. `--workspace`, `--tab` and
+`--pane` look up other IDs instead and replace the inherited ones entirely; a
+tab needs its workspace or a pane.
+
+Herdr is first checked the way `leme doctor` checks it. If the executable, the
+server, or the operations Leme needs are unavailable, the command names the
+failed check and its correction and sends nothing else. Checks that could not
+be confirmed are listed as unconfirmed. Herdr is found through `HERDR_BIN_PATH`
+(set by Herdr) or `PATH`, and each request has `--timeout` seconds (default 5).
+Only read operations are used. Outside Herdr, or when Herdr does not know an ID
+or places a pane somewhere other than the supplied IDs say, the command exits
+with an error.
+
+The Herdr plugin in `plugin/` opens this report in a pane next to the pane it
+is invoked from. See [the Herdr plugin](docs/herdr-plugin.md) to link and use it.
+
 ## Open the dashboard
 
 Run from a Git checkout, in a terminal or a Herdr pane:

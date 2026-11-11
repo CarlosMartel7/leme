@@ -8,7 +8,8 @@ use std::time::Duration;
 use serde_json::Value;
 
 use super::{
-    Capability, CapabilityStatus, Check, CheckStatus, Probes, Report, Run, StateProbe, ToolProbe,
+    Capability, CapabilityStatus, Check, CheckStatus, HerdrProbes, Probes, Report, Run, StateProbe,
+    ToolProbe,
 };
 use crate::config::{Agent, Preferences};
 use crate::git::Checkout;
@@ -221,7 +222,7 @@ pub fn classify(probes: &Probes) -> Report {
         repository_check(&probes.repository),
         preferences_check(probes.preferences.as_ref()),
         state_check(&probes.state),
-        tool_check(&HERDR, &probes.herdr),
+        herdr_tool_check(&probes.herdr),
         herdr_server_check(probes.herdr_server.as_ref()),
         herdr_api_check(probes.herdr_schema.as_ref()),
         tool_check(&NEOVIM, &probes.neovim),
@@ -563,6 +564,20 @@ fn state_check(probe: &StateProbe) -> Check {
     };
     result.path = Some(path.clone());
     result
+}
+
+/// Judges the Herdr executable, its server and its API, in the order and
+/// with the same results [`classify`] gives them.
+pub fn classify_herdr(probes: &HerdrProbes) -> [Check; 3] {
+    [
+        herdr_tool_check(&probes.tool),
+        herdr_server_check(probes.server.as_ref()),
+        herdr_api_check(probes.schema.as_ref()),
+    ]
+}
+
+fn herdr_tool_check(probe: &ToolProbe) -> Check {
+    tool_check(&HERDR, probe)
 }
 
 const HERDR_STATUS: &str = "herdr status server --json";

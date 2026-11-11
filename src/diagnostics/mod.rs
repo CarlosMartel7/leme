@@ -22,8 +22,9 @@ use crate::git::Checkout;
 
 pub use classify::{
     HERDR_OPERATIONS, MINIMUM_GIT, MINIMUM_RUST, TESTED_HERDR_PROTOCOL, Version, classify,
+    classify_herdr,
 };
-pub use probe::{collect, find_executable, run};
+pub use probe::{collect, find_executable, probe_herdr, run};
 
 /// How long a single probe may run before it is stopped.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -61,6 +62,18 @@ pub struct Probes {
     pub rustc: ToolProbe,
     /// `cc --version`, needed only to build Leme's bundled SQLite.
     pub cc: ToolProbe,
+}
+
+/// What the Herdr probes observed: the executable, then its server and API
+/// schema, which are asked for only when `herdr --version` succeeded.
+#[derive(Debug, Clone)]
+pub struct HerdrProbes {
+    /// `herdr --version`.
+    pub tool: ToolProbe,
+    /// `herdr status server --json`; `None` when Herdr could not be run.
+    pub server: Option<Run>,
+    /// `herdr api schema --json`; `None` when Herdr could not be run.
+    pub schema: Option<Run>,
 }
 
 /// What looking up and running an executable revealed.
