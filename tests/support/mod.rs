@@ -257,7 +257,8 @@ pub const HERDR_VARIABLES: [&str; 6] = [
 ///
 /// Each request is answered from files under `responses/`, keyed by its
 /// first two arguments (`pane-current`, `workspace-list`, `tab-list`,
-/// `status-server`, `api-schema`) or `version` for `--version`. A new fake
+/// `worktree-open`, `status-server`, `api-schema`) or `version` for
+/// `--version`. A new fake
 /// answers like a healthy Herdr whose server runs the tested protocol, and
 /// whose workspace, tab and pane lists are empty until a test fills them.
 /// Every invocation's arguments are recorded one per line, so tests can
@@ -347,6 +348,14 @@ impl FakeHerdr {
         fs::write(self.response(key, "hang"), "").expect("write response");
     }
 
+    /// Answers `worktree open` with workspace `workspace` for `checkout`.
+    pub fn open_worktree(&self, workspace: &str, checkout: &Path, already_open: bool) {
+        self.respond(
+            "worktree-open",
+            &herdr_worktree_opened(workspace, checkout, already_open),
+        );
+    }
+
     /// The arguments of every invocation, in order.
     pub fn calls(&self) -> Vec<Vec<String>> {
         let text = fs::read_to_string(self.directory.join("calls")).unwrap_or_default();
@@ -371,6 +380,26 @@ pub fn herdr_reply(result: Value) -> String {
 /// A Herdr error reply, as the CLI prints it on stderr.
 pub fn herdr_error(code: &str, message: &str) -> String {
     json!({"id": "cli:test", "error": {"code": code, "message": message}}).to_string()
+}
+
+/// `herdr worktree open` reporting workspace `workspace` for `checkout`, in
+/// the shape Herdr 0.9.5 prints.
+pub fn herdr_worktree_opened(workspace: &str, checkout: &Path, already_open: bool) -> String {
+    let name = checkout
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned());
+    herdr_reply(json!({
+        "type": "worktree_opened",
+        "already_open": already_open,
+        "workspace": {
+            "workspace_id": workspace,
+            "label": name,
+            "focused": true,
+            "worktree": {"checkout_path": checkout, "is_linked_worktree": true},
+        },
+        "tab": {"tab_id": format!("{workspace}:t1"), "workspace_id": workspace},
+        "root_pane": {"pane_id": format!("{workspace}:p1"), "workspace_id": workspace},
+    }))
 }
 
 /// `herdr status server --json` from a running, compatible server.
