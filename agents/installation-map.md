@@ -89,7 +89,11 @@ The source paths are provenance only. Installation reads the bundled copies.
 Destinations, at the user scope:
 
 - Codex: `~/.agents/skills/<name>/`;
-- Claude Code: `~/.claude/skills/<name>/`.
+- Claude Code: `~/.claude/skills/<name>/`, or `$CLAUDE_CONFIG_DIR/skills/<name>/`
+  when that variable is set.
+
+`leme skills install` is this installer; [workflow skills](../docs/skills.md)
+describes its use, results and conflict rules.
 
 The skill installer:
 

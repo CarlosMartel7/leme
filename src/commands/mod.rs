@@ -3,6 +3,7 @@
 mod dashboard;
 mod doctor;
 mod herdr_context;
+mod skills;
 mod status;
 
 use std::fmt;
@@ -14,6 +15,7 @@ use clap::{Parser, Subcommand};
 use crate::config::ConfigError;
 use crate::git::DiscoveryError;
 use crate::herdr::HerdrError;
+use crate::skills::{CatalogError, InstallError, Outcome};
 use crate::state::StateError;
 
 #[derive(Debug, Parser)]
@@ -66,6 +68,32 @@ enum Command {
     /// Inspect how Herdr sees this Leme process
     #[command(subcommand)]
     Herdr(HerdrCommand),
+
+    /// Install the workflow skills bundled with Leme
+    #[command(subcommand)]
+    Skills(SkillsCommand),
+}
+
+#[derive(Debug, Subcommand)]
+enum SkillsCommand {
+    /// Copy the bundled skills into an agent's user skills directory
+    ///
+    /// Installs every bundled skill, helpers included, as a complete
+    /// directory: $HOME/.agents/skills/<name> for Codex and
+    /// ~/.claude/skills/<name> for Claude Code ($CLAUDE_CONFIG_DIR/skills when
+    /// that is set). The skills come from this executable, so no network or
+    /// source checkout is needed.
+    ///
+    /// Every destination is checked before anything is written. Skills that
+    /// already match are left alone, and other skills in the directory are
+    /// never touched. A directory Leme did not install, or a Leme copy changed
+    /// since, is a conflict: the run stops without writing and the exit
+    /// status is 1. Leme records what it installed in .leme-skills.toml in
+    /// each skills directory.
+    ///
+    /// Installing never runs a skill and does not change agent settings,
+    /// permissions, authentication or connectors.
+    Install(skills::InstallArgs),
 }
 
 #[derive(Debug, Subcommand)]
@@ -105,6 +133,12 @@ pub enum Error {
     Terminal(io::Error),
     /// Herdr could not be used or did not resolve the context.
     Herdr(HerdrError),
+    /// The bundled skills failed validation.
+    Catalog(CatalogError),
+    /// The skills could not be installed.
+    Install(InstallError),
+    /// The skills report was printed, but not every target was completed.
+    SkillsIncomplete(Outcome),
 }
 
 impl fmt::Display for Error {
@@ -124,6 +158,12 @@ impl fmt::Display for Error {
             ),
             Self::Terminal(error) => write!(f, "cannot use the terminal: {error}"),
             Self::Herdr(error) => error.fmt(f),
+            Self::Catalog(error) => error.fmt(f),
+            Self::Install(error) => error.fmt(f),
+            Self::SkillsIncomplete(Outcome::Conflict) => {
+                write!(f, "some skills conflict with existing directories")
+            }
+            Self::SkillsIncomplete(_) => write!(f, "the skills were not installed everywhere"),
         }
     }
 }
@@ -139,7 +179,9 @@ impl std::error::Error for Error {
             Self::State(error) => Some(error),
             Self::Json(error) => Some(error),
             Self::Herdr(error) => Some(error),
-            Self::NotATerminal => None,
+            Self::Catalog(error) => Some(error),
+            Self::Install(error) => Some(error),
+            Self::NotATerminal | Self::SkillsIncomplete(_) => None,
         }
     }
 }
@@ -193,5 +235,6 @@ pub fn run() -> Result<(), Error> {
         Command::Doctor(args) => doctor::run(&args),
         Command::Dashboard(args) => dashboard::run(&args),
         Command::Herdr(HerdrCommand::Context(args)) => herdr_context::run(&args),
+        Command::Skills(SkillsCommand::Install(args)) => skills::run(&args),
     }
 }

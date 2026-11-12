@@ -7,6 +7,8 @@ project preferences, and reports locally registered tasks. `leme doctor` checks 
 supports. `leme dashboard` shows the same project in a full-screen terminal view.
 
 `leme herdr context` reports the Herdr workspace, tab and pane it was run from.
+`leme skills install` installs the bundled workflow skills for Codex or Claude
+Code.
 
 The broader plan includes opening Herdr workspaces, agent sessions, and live
 agent data in the dashboard. Those integrations are not implemented yet.
@@ -137,6 +139,24 @@ cannot be loaded, the error is shown on screen and `r` retries.
 Refreshing reads Git and Leme's state database only. It does not change the
 repository and does not start an agent. The dashboard needs an interactive
 terminal and exits with an error when its input or output is redirected.
+
+## Install the workflow skills
+
+Leme bundles the planning, implementation and review skills its workflow uses.
+Install them for Codex, Claude Code or both:
+
+```sh
+leme skills install --target both --dry-run
+leme skills install --target both
+```
+
+Skills go to `$HOME/.agents/skills/<name>` for Codex and `~/.claude/skills/<name>`
+(or `$CLAUDE_CONFIG_DIR/skills/<name>`) for Claude Code. The skills are embedded
+in the executable, so no network or checkout is needed. Existing skills that
+match are left alone and unrelated skills are never touched. A directory Leme
+did not install, or a Leme copy edited since, stops the run before anything is
+written. Installing never runs a skill or changes agent settings. See
+[workflow skills](docs/skills.md) for the list of skills and the full rules.
 
 ## Preferences
 
