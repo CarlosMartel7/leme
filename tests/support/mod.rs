@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 pub mod pty;
+pub mod skills;
 
 use std::env;
 use std::fs;
