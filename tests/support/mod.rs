@@ -257,9 +257,12 @@ pub const HERDR_VARIABLES: [&str; 6] = [
 ///
 /// Each request is answered from files under `responses/`, keyed by its
 /// first two arguments (`pane-current`, `workspace-list`, `tab-list`,
-/// `status-server`, `api-schema`) or `version` for `--version`. A new fake
-/// answers like a healthy Herdr whose server runs the tested protocol, and
-/// whose workspace, tab and pane lists are empty until a test fills them.
+/// `worktree-open`, `status-server`, `api-schema`) or `version` for
+/// `--version`. A new fake answers like a healthy Herdr whose server runs
+/// the tested protocol, with no workspaces, tabs or panes. Unless a test
+/// sets a response, tabs are tracked as Herdr tracks them (new tabs are
+/// numbered from 2), `worktree create` runs the real `git worktree add`, and
+/// `pane run` succeeds; see [`FAKE_HERDR`].
 /// Every invocation's arguments are recorded one per line, so tests can
 /// check that each value arrived as a single argument.
 pub struct FakeHerdr {
@@ -270,29 +273,106 @@ pub struct FakeHerdr {
 /// A recorded invocation's arguments end with this line.
 const CALL_END: &str = "--end-of-call--";
 
+/// The fake's `/bin/sh` script. `@DIR@`, `@CAT@`, `@SLEEP@` and `@GIT@` are
+/// replaced with quoted absolute paths, since the script may see no `PATH`.
+///
+/// A request with a response file under `responses/` is answered from it.
+/// Without one, `tab create`, `tab list` and `tab close` keep an inventory
+/// of open tabs in `tabs`; `tab create` fails once `tabs-allowed` reaches 0;
+/// and `worktree create` runs the real `git worktree add` and opens a new
+/// workspace (`next-workspace`, default `w5`) whose first tab is `t1`.
+const FAKE_HERDR: &str = r#"#!/bin/sh
+dir=@DIR@
+{ for argument in "$@"; do printf '%s\n' "$argument"; done; printf '%s\n' @END@; } >> "$dir/calls"
+case "$1" in --version) key=version ;; *) key="$1-$2" ;; esac
+response="$dir/responses/$key"
+if [ -f "$response.hang" ]; then exec @SLEEP@ 30; fi
+if [ -f "$response.stdout" ] || [ -f "$response.stderr" ]; then
+    if [ -f "$response.stderr" ]; then @CAT@ "$response.stderr" >&2; fi
+    if [ -f "$response.stdout" ]; then @CAT@ "$response.stdout"; fi
+    if [ -f "$response.status" ]; then exit "$(@CAT@ "$response.status")"; fi
+    exit 0
+fi
+value() {
+    wanted="$1"; shift; previous=
+    for argument in "$@"; do
+        if [ "$previous" = "$wanted" ]; then printf '%s' "$argument"; return; fi
+        previous="$argument"
+    done
+}
+fail() {
+    printf '{"id":"cli:test","error":{"code":"%s","message":"%s"}}\n' "$1" "$2" >&2
+    exit 1
+}
+case "$key" in
+tab-create)
+    workspace=$(value --workspace "$@"); label=$(value --label "$@")
+    if [ -f "$dir/tabs-allowed" ]; then
+        allowed=$(@CAT@ "$dir/tabs-allowed")
+        if [ "$allowed" -le 0 ]; then fail tab_create_failed "cannot open another tab"; fi
+        printf '%s\n' "$((allowed - 1))" > "$dir/tabs-allowed"
+    fi
+    count=$(( $(@CAT@ "$dir/tab-count" 2>/dev/null || echo 1) + 1 ))
+    printf '%s\n' "$count" > "$dir/tab-count"
+    printf '%s:t%s\n' "$workspace" "$count" >> "$dir/tabs"
+    printf '{"id":"cli:test","result":{"type":"tab_created","tab":{"tab_id":"%s:t%s","workspace_id":"%s","label":"%s"},"root_pane":{"pane_id":"%s:p%s","workspace_id":"%s"}}}\n' \
+        "$workspace" "$count" "$workspace" "$label" "$workspace" "$count" "$workspace"
+    ;;
+tab-list)
+    workspace=$(value --workspace "$@"); tabs=
+    if [ -f "$dir/tabs" ]; then
+        while IFS= read -r tab; do
+            case "$tab" in
+            "$workspace":*) tabs="$tabs${tabs:+,}{\"tab_id\":\"$tab\",\"workspace_id\":\"$workspace\"}" ;;
+            esac
+        done < "$dir/tabs"
+    fi
+    printf '{"id":"cli:test","result":{"type":"tab_list","tabs":[%s]}}\n' "$tabs"
+    ;;
+tab-close)
+    if [ -f "$dir/tabs" ]; then
+        while IFS= read -r tab; do
+            [ "$tab" = "$3" ] || printf '%s\n' "$tab"
+        done < "$dir/tabs" > "$dir/tabs.next"
+        @CAT@ "$dir/tabs.next" > "$dir/tabs"
+    fi
+    printf '{"id":"cli:test","result":{"type":"ok"}}\n'
+    ;;
+worktree-create)
+    cwd=$(value --cwd "$@"); branch=$(value --branch "$@")
+    base=$(value --base "$@"); path=$(value --path "$@")
+    if [ -n "$base" ]; then
+        @GIT@ -C "$cwd" worktree add --quiet -b "$branch" "$path" "$base" >&2 \
+            || fail worktree_create_failed "git worktree add failed"
+    else
+        @GIT@ -C "$cwd" worktree add --quiet "$path" "$branch" >&2 \
+            || fail worktree_create_failed "git worktree add failed"
+    fi
+    workspace=$(@CAT@ "$dir/next-workspace" 2>/dev/null || echo w5)
+    printf '%s:t1\n' "$workspace" >> "$dir/tabs"
+    printf '{"id":"cli:test","result":{"type":"worktree_created","workspace":{"workspace_id":"%s","label":"new","worktree":{"checkout_path":"%s"}},"tab":{"tab_id":"%s:t1","workspace_id":"%s"},"root_pane":{"pane_id":"%s:p1","workspace_id":"%s"}}}\n' \
+        "$workspace" "$path" "$workspace" "$workspace" "$workspace" "$workspace"
+    ;;
+*)
+    printf 'unexpected request: %s\n' "$*" >&2
+    exit 64
+    ;;
+esac
+"#;
+
 impl FakeHerdr {
     /// Writes the fake to `directory`/herdr. The directory may contain
     /// spaces or quotes.
     pub fn new(directory: &Path) -> Self {
         fs::create_dir_all(directory.join("responses")).expect("create fake Herdr");
         let executable = directory.join("herdr");
-        let quoted = shell_quote(directory.to_str().expect("UTF-8 fake Herdr path"));
-        let cat = shell_quote(system_executable("cat").to_str().unwrap());
-        let sleep = shell_quote(system_executable("sleep").to_str().unwrap());
-        let script = format!(
-            "#!/bin/sh\n\
-             dir={quoted}\n\
-             {{ for argument in \"$@\"; do printf '%s\\n' \"$argument\"; done; \
-             printf '%s\\n' {CALL_END}; }} >> \"$dir/calls\"\n\
-             case \"$1\" in --version) key=version ;; *) key=\"$1-$2\" ;; esac\n\
-             response=\"$dir/responses/$key\"\n\
-             if [ -f \"$response.hang\" ]; then exec {sleep} 30; fi\n\
-             if [ ! -f \"$response.stdout\" ] && [ ! -f \"$response.stderr\" ]; then\n\
-             printf 'unexpected request: %s\\n' \"$*\" >&2; exit 64; fi\n\
-             if [ -f \"$response.stderr\" ]; then {cat} \"$response.stderr\" >&2; fi\n\
-             if [ -f \"$response.stdout\" ]; then {cat} \"$response.stdout\"; fi\n\
-             if [ -f \"$response.status\" ]; then exit \"$({cat} \"$response.status\")\"; fi\n"
-        );
+        let quote = |path: &Path| shell_quote(path.to_str().expect("UTF-8 path"));
+        let script = FAKE_HERDR
+            .replace("@DIR@", &quote(directory))
+            .replace("@CAT@", &quote(&system_executable("cat")))
+            .replace("@SLEEP@", &quote(&system_executable("sleep")))
+            .replace("@GIT@", &quote(&system_executable("git")))
+            .replace("@END@", CALL_END);
         fs::write(&executable, script).expect("write fake Herdr");
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))
             .expect("make fake Herdr executable");
@@ -307,8 +387,34 @@ impl FakeHerdr {
             &herdr_schema(leme::diagnostics::TESTED_HERDR_PROTOCOL),
         );
         fake.respond("workspace-list", &herdr_reply(json!({"workspaces": []})));
-        fake.respond("tab-list", &herdr_reply(json!({"tabs": []})));
+        // `herdr pane run` prints nothing when it succeeds.
+        fake.respond("pane-run", "");
         fake
+    }
+
+    /// Lets the next `count` tab creations succeed and fails the ones after
+    /// them, as Herdr does when it cannot open a tab.
+    pub fn allow_tabs(&self, count: usize) {
+        fs::write(self.directory.join("tabs-allowed"), format!("{count}\n")).expect("limit tabs");
+    }
+
+    /// Lets every later tab creation succeed.
+    pub fn allow_all_tabs(&self) {
+        let _ = fs::remove_file(self.directory.join("tabs-allowed"));
+    }
+
+    /// Makes the next `worktree create` report workspace `workspace`.
+    pub fn next_workspace(&self, workspace: &str) {
+        fs::write(self.directory.join("next-workspace"), workspace).expect("set workspace");
+    }
+
+    /// The tabs currently open, as `workspace:tN` IDs.
+    pub fn tabs(&self) -> Vec<String> {
+        fs::read_to_string(self.directory.join("tabs"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect()
     }
 
     /// The fake executable.
@@ -328,6 +434,21 @@ impl FakeHerdr {
         }
     }
 
+    /// Removes any response set for request `key`, restoring the default.
+    pub fn reset(&self, key: &str) {
+        self.clear(key);
+    }
+
+    /// Closes `tab` as a user would, outside Leme.
+    pub fn close_tab(&self, tab: &str) {
+        let remaining: Vec<String> = self.tabs().into_iter().filter(|open| open != tab).collect();
+        let text = remaining
+            .iter()
+            .map(|open| format!("{open}\n"))
+            .collect::<String>();
+        fs::write(self.directory.join("tabs"), text).expect("close tab");
+    }
+
     /// Answers request `key` by printing `stdout` and succeeding.
     pub fn respond(&self, key: &str, stdout: &str) {
         self.clear(key);
@@ -345,6 +466,14 @@ impl FakeHerdr {
     pub fn hang(&self, key: &str) {
         self.clear(key);
         fs::write(self.response(key, "hang"), "").expect("write response");
+    }
+
+    /// Answers `worktree open` with workspace `workspace` for `checkout`.
+    pub fn open_worktree(&self, workspace: &str, checkout: &Path, already_open: bool) {
+        self.respond(
+            "worktree-open",
+            &herdr_worktree_opened(workspace, checkout, already_open),
+        );
     }
 
     /// The arguments of every invocation, in order.
@@ -371,6 +500,26 @@ pub fn herdr_reply(result: Value) -> String {
 /// A Herdr error reply, as the CLI prints it on stderr.
 pub fn herdr_error(code: &str, message: &str) -> String {
     json!({"id": "cli:test", "error": {"code": code, "message": message}}).to_string()
+}
+
+/// `herdr worktree open` reporting workspace `workspace` for `checkout`, in
+/// the shape Herdr 0.9.5 prints.
+pub fn herdr_worktree_opened(workspace: &str, checkout: &Path, already_open: bool) -> String {
+    let name = checkout
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned());
+    herdr_reply(json!({
+        "type": "worktree_opened",
+        "already_open": already_open,
+        "workspace": {
+            "workspace_id": workspace,
+            "label": name,
+            "focused": true,
+            "worktree": {"checkout_path": checkout, "is_linked_worktree": true},
+        },
+        "tab": {"tab_id": format!("{workspace}:t1"), "workspace_id": workspace},
+        "root_pane": {"pane_id": format!("{workspace}:p1"), "workspace_id": workspace},
+    }))
 }
 
 /// `herdr status server --json` from a running, compatible server.

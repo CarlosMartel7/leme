@@ -2,6 +2,7 @@
 
 mod dashboard;
 mod doctor;
+mod feature;
 mod herdr_context;
 mod status;
 
@@ -63,6 +64,10 @@ enum Command {
     /// state database; it never changes the repository or starts an agent.
     Dashboard(dashboard::DashboardArgs),
 
+    /// Open a task's feature checkout in Herdr
+    #[command(subcommand)]
+    Feature(feature::FeatureCommand),
+
     /// Inspect how Herdr sees this Leme process
     #[command(subcommand)]
     Herdr(HerdrCommand),
@@ -105,6 +110,8 @@ pub enum Error {
     Terminal(io::Error),
     /// Herdr could not be used or did not resolve the context.
     Herdr(HerdrError),
+    /// The feature could not be opened.
+    Feature(Box<feature::FeatureError>),
 }
 
 impl fmt::Display for Error {
@@ -124,6 +131,7 @@ impl fmt::Display for Error {
             ),
             Self::Terminal(error) => write!(f, "cannot use the terminal: {error}"),
             Self::Herdr(error) => error.fmt(f),
+            Self::Feature(error) => error.fmt(f),
         }
     }
 }
@@ -139,6 +147,7 @@ impl std::error::Error for Error {
             Self::State(error) => Some(error),
             Self::Json(error) => Some(error),
             Self::Herdr(error) => Some(error),
+            Self::Feature(error) => Some(error.as_ref()),
             Self::NotATerminal => None,
         }
     }
@@ -192,6 +201,7 @@ pub fn run() -> Result<(), Error> {
         Command::Status(args) => status::run(&args),
         Command::Doctor(args) => doctor::run(&args),
         Command::Dashboard(args) => dashboard::run(&args),
+        Command::Feature(command) => feature::run(&command),
         Command::Herdr(HerdrCommand::Context(args)) => herdr_context::run(&args),
     }
 }

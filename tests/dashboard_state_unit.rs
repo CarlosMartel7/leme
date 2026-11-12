@@ -33,6 +33,7 @@ fn snapshot(task_count: usize) -> Snapshot {
                 id: format!("T{index}"),
                 branch: format!("feature/task-{index}"),
                 worktree: PathBuf::from(format!("/work/leme-task-{index}")),
+                workspace: None,
             })
             .collect(),
     }

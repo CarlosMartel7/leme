@@ -140,11 +140,11 @@ fn read_path(directory: &Path, arguments: &[&str]) -> Result<PathBuf, DiscoveryE
     Ok(path_from_bytes(&read(directory, arguments)?))
 }
 
-fn read(directory: &Path, arguments: &[&str]) -> Result<Vec<u8>, DiscoveryError> {
+pub(super) fn read(directory: &Path, arguments: &[&str]) -> Result<Vec<u8>, DiscoveryError> {
     success_output(arguments, run_git(directory, arguments)?)
 }
 
-fn run_git(directory: &Path, arguments: &[&str]) -> Result<Output, DiscoveryError> {
+pub(super) fn run_git(directory: &Path, arguments: &[&str]) -> Result<Output, DiscoveryError> {
     Command::new("git")
         .arg("-C")
         .arg(directory)
@@ -169,7 +169,10 @@ fn is_not_a_repository(output: &Output) -> bool {
     String::from_utf8_lossy(&output.stderr).contains("not a git repository")
 }
 
-fn success_output(arguments: &[&str], output: Output) -> Result<Vec<u8>, DiscoveryError> {
+pub(super) fn success_output(
+    arguments: &[&str],
+    output: Output,
+) -> Result<Vec<u8>, DiscoveryError> {
     if output.status.success() {
         let mut stdout = output.stdout;
         // Remove only Git's line ending: a path may end in other whitespace.
@@ -189,11 +192,11 @@ fn failure(arguments: &[&str], output: &Output) -> DiscoveryError {
     }
 }
 
-fn command_line(arguments: &[&str]) -> String {
+pub(super) fn command_line(arguments: &[&str]) -> String {
     format!("git {}", arguments.join(" "))
 }
 
 /// Git reports paths as bytes, which need not be valid UTF-8 on Linux.
-fn path_from_bytes(bytes: &[u8]) -> PathBuf {
+pub(super) fn path_from_bytes(bytes: &[u8]) -> PathBuf {
     PathBuf::from(OsStr::from_bytes(bytes))
 }
