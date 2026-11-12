@@ -7,6 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use serde_json::Value;
 
 use super::{Herdr, HerdrError, Operation, RequestFailure};
 
@@ -17,6 +18,11 @@ pub struct OpenedWorkspace {
     pub label: Option<String>,
     /// Whether the workspace was already open before the request.
     pub already_open: bool,
+    /// The tab Herdr created with a new workspace, holding an idle shell.
+    /// `None` for a workspace that was already open, whose tabs belong to
+    /// the user.
+    #[serde(skip)]
+    pub new_tab: Option<String>,
 }
 
 /// Opens and focuses the workspace of the linked worktree at `checkout`,
@@ -57,6 +63,16 @@ pub fn open_worktree(
             },
             _ => error,
         })?;
+    workspace_from_reply(&reply, operation, checkout)
+}
+
+/// Reads the workspace of a `worktree.open` or `worktree.create` reply,
+/// which must be the workspace of `checkout`.
+pub(super) fn workspace_from_reply(
+    reply: &Value,
+    operation: Operation,
+    checkout: &Path,
+) -> Result<OpenedWorkspace, HerdrError> {
     let workspace = &reply["workspace"];
     let id = workspace["workspace_id"]
         .as_str()
@@ -73,16 +89,22 @@ pub fn open_worktree(
             reported: reported.display().to_string(),
         });
     }
+    let already_open = reply["already_open"].as_bool().unwrap_or(false);
+    let new_tab = reply["tab"]["tab_id"]
+        .as_str()
+        .filter(|tab| !already_open && !tab.is_empty())
+        .map(str::to_owned);
     Ok(OpenedWorkspace {
         id: id.to_owned(),
         label: workspace["label"].as_str().map(str::to_owned),
-        already_open: reply["already_open"].as_bool().unwrap_or(false),
+        already_open,
+        new_tab,
     })
 }
 
 /// Whether two paths name the same directory, comparing resolved paths when
 /// both exist so that symbolic links do not cause a false mismatch.
-fn same_path(left: &Path, right: &Path) -> bool {
+pub(super) fn same_path(left: &Path, right: &Path) -> bool {
     left == right
         || matches!(
             (fs::canonicalize(left), fs::canonicalize(right)),
@@ -90,7 +112,7 @@ fn same_path(left: &Path, right: &Path) -> bool {
         )
 }
 
-fn missing(field: &'static str, operation: Operation) -> HerdrError {
+pub(super) fn missing(field: &'static str, operation: Operation) -> HerdrError {
     HerdrError::Request {
         operation,
         cause: RequestFailure::MissingField { field },

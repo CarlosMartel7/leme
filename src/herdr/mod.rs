@@ -4,13 +4,16 @@
 //! resolves the workspace, tab and pane a Leme process was invoked from,
 //! using the IDs Herdr supplied rather than whatever is focused when the
 //! request runs, so a user switching workspaces cannot redirect it.
-//! [`open_worktree`] opens the workspace of an existing checkout.
+//! [`open_worktree`] opens the workspace of an existing checkout,
+//! [`create_worktree`] creates a new one, and [`create_tab`] lays out its tabs.
 //!
 //! Before talking to Herdr, callers check [`Herdr::readiness`], which runs
 //! the same Herdr checks as `leme doctor`.
 
 mod cli;
 mod context;
+mod provision;
+mod tabs;
 mod workspaces;
 
 use std::fmt;
@@ -20,6 +23,8 @@ use crate::diagnostics::Check;
 
 pub use cli::{Herdr, Readiness, RequestFailure};
 pub use context::{Context, Invocation, PaneInfo, TabInfo, WorkspaceInfo, resolve};
+pub use provision::{NewCheckout, TabRole, create_worktree};
+pub use tabs::{CreatedTab, close_tab, create_tab, list_tabs, run_in_pane};
 pub use workspaces::{OpenedWorkspace, open_worktree};
 
 /// The Herdr API operations this adapter sends. Each is one of the
@@ -28,10 +33,19 @@ pub use workspaces::{OpenedWorkspace, open_worktree};
 pub enum Operation {
     /// `pane.current`: one pane with its tab and workspace.
     PaneCurrent,
+    /// `pane.send_input`, sent by `herdr pane run`: text and Enter typed
+    /// into a pane.
+    PaneSendInput,
+    /// `tab.close`: closes one tab.
+    TabClose,
+    /// `tab.create`: a new tab in a given workspace and directory.
+    TabCreate,
     /// `tab.list`: the tabs of one workspace.
     TabList,
     /// `workspace.list`: every workspace.
     WorkspaceList,
+    /// `worktree.create`: a new Git worktree and its workspace.
+    WorktreeCreate,
     /// `worktree.open`: the workspace of an existing checkout, opened if needed.
     WorktreeOpen,
 }
@@ -41,8 +55,12 @@ impl Operation {
     pub fn method(self) -> &'static str {
         match self {
             Self::PaneCurrent => "pane.current",
+            Self::PaneSendInput => "pane.send_input",
+            Self::TabClose => "tab.close",
+            Self::TabCreate => "tab.create",
             Self::TabList => "tab.list",
             Self::WorkspaceList => "workspace.list",
+            Self::WorktreeCreate => "worktree.create",
             Self::WorktreeOpen => "worktree.open",
         }
     }

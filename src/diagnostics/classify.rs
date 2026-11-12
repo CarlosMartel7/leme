@@ -35,8 +35,10 @@ pub const TESTED_HERDR_PROTOCOL: u64 = 22;
 
 /// Herdr API operations Leme uses to find its context and to open
 /// workspaces, worktrees and tabs.
-pub const HERDR_OPERATIONS: [&str; 8] = [
+pub const HERDR_OPERATIONS: [&str; 10] = [
     "pane.current",
+    "pane.send_input",
+    "tab.close",
     "tab.create",
     "tab.list",
     "workspace.create",

@@ -105,6 +105,26 @@ impl Herdr {
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
+        let stdout = self.run(operation, arguments)?;
+        parse_reply(&stdout).map_err(|cause| HerdrError::Request { operation, cause })
+    }
+
+    /// Sends one request whose success Herdr reports only through its exit
+    /// status, such as `pane run`, which prints nothing.
+    pub fn send<I, S>(&self, operation: Operation, arguments: I) -> Result<(), HerdrError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        self.run(operation, arguments).map(drop)
+    }
+
+    /// Runs one request and returns the standard output of a successful one.
+    fn run<I, S>(&self, operation: Operation, arguments: I) -> Result<String, HerdrError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
         let arguments: Vec<OsString> = arguments
             .into_iter()
             .map(|argument| argument.as_ref().to_owned())
@@ -127,7 +147,7 @@ impl Herdr {
                 success: true,
                 stdout,
                 ..
-            } => parse_reply(&stdout).map_err(failure),
+            } => Ok(stdout),
         }
     }
 }

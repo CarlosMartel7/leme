@@ -7,12 +7,11 @@ project preferences, and reports locally registered tasks. `leme doctor` checks 
 supports. `leme dashboard` shows the same project in a full-screen terminal view.
 
 `leme herdr context` reports the Herdr workspace, tab and pane it was run from.
-`leme feature open` opens a task's existing feature checkout in its own Herdr
-workspace.
+`leme feature open` gives a task its own feature checkout and Herdr workspace
+with agent, Neovim and test tabs.
 
-The broader plan includes creating feature checkouts with a default tab layout,
-agent sessions, and live agent data in the dashboard. Those integrations are not
-implemented yet.
+The broader plan includes starting agent sessions and live agent data in the
+dashboard. Those integrations are not implemented yet.
 
 ## Build and install
 
@@ -138,19 +137,23 @@ task is opened, `--branch` names its feature branch; Leme records the task, its
 branch and its checkout in the local state database, and later invocations use
 the recorded branch. A task owns one branch, and a branch belongs to one task.
 
-The branch must already be checked out in a linked worktree of the repository,
-for example after `git worktree add ../search feature/search`. Leme refuses a
-branch checked out in the main checkout, which the whole project shares, and
-names the checkout it found. If the worktree was moved, the record follows
-Git and the previous path is reported.
+If a linked worktree already has the branch, Herdr opens or focuses that
+checkout's workspace. Otherwise Leme shows the branch, the base and the path it
+would create, and asks before changing Git; pass `--yes` to confirm without
+asking, and `--path` to choose the location. A new branch starts from the
+project's integration branch (`integration_branch` in `leme.toml`), whichever
+checkout the command runs in. A branch checked out in the main checkout is
+refused, since the whole project shares that checkout.
 
-Herdr is checked as for `leme herdr context`, then asked to open the checkout's
-workspace and focus it. Herdr keeps one workspace per checkout, so opening the
-task again focuses the same workspace instead of adding another; a workspace
-that was closed is reopened and its new ID recorded. Existing workspace names
-are left unchanged. The report also shows the project's integration branch
-(`integration_branch` in `leme.toml`). Git is only read; Herdr may also open a
-workspace for the main checkout, which it uses as the source of the worktree.
+The workspace gets three tabs in the checkout: `agent`, a shell left for the
+agent launcher; `neovim`; and `tests`. Each tab is recorded as it opens, so
+running the command again after an interruption adds only the missing tabs and
+keeps the checkout and its local changes. Herdr keeps one workspace per
+checkout, so opening the task again focuses the same workspace. Herdr is
+checked as for `leme herdr context` before anything changes.
+
+See [feature workspaces](docs/feature-workspaces.md) for the resolution rules,
+the tab environment variables and the known gaps.
 
 ## Open the dashboard
 

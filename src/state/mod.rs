@@ -3,9 +3,11 @@
 //! The database survives the removal of any worktree. Its schema follows
 //! `MIGRATIONS`, and `PRAGMA user_version` records how many of them have run.
 
+mod operations;
 mod project;
 mod tasks;
 
+pub use operations::LayoutTab;
 pub use project::Project;
 pub use tasks::{Task, TaskConflict};
 
@@ -18,9 +20,10 @@ use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 
-const MIGRATIONS: [&str; 2] = [
+const MIGRATIONS: [&str; 3] = [
     include_str!("migrations/001_project.sql"),
     include_str!("migrations/002_task_workspace.sql"),
+    include_str!("migrations/003_workspace_tabs.sql"),
 ];
 
 /// The schema version this Leme creates and understands.

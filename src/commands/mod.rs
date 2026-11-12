@@ -111,7 +111,7 @@ pub enum Error {
     /// Herdr could not be used or did not resolve the context.
     Herdr(HerdrError),
     /// The feature could not be opened.
-    Feature(feature::FeatureError),
+    Feature(Box<feature::FeatureError>),
 }
 
 impl fmt::Display for Error {
@@ -147,7 +147,7 @@ impl std::error::Error for Error {
             Self::State(error) => Some(error),
             Self::Json(error) => Some(error),
             Self::Herdr(error) => Some(error),
-            Self::Feature(error) => Some(error),
+            Self::Feature(error) => Some(error.as_ref()),
             Self::NotATerminal => None,
         }
     }

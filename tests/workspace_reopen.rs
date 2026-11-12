@@ -365,11 +365,14 @@ fn a_branch_without_a_usable_checkout_is_refused() {
         .open(&project.repository, &["T-3", "--branch", "@{-1}"])
         .run();
 
+    // Without a checkout, one would have to be created, which needs --yes
+    // when there is no terminal to ask in.
     let message = failure_message(&none);
     assert!(
-        message.contains("branch feature/none is not checked out in any worktree"),
+        message.contains("check out the existing branch feature/none"),
         "{message}"
     );
+    assert!(message.contains("Nothing was changed"), "{message}");
     let message = failure_message(&missing);
     assert!(
         message.contains(&format!(
@@ -383,7 +386,18 @@ fn a_branch_without_a_usable_checkout_is_refused() {
         message.contains("`@{-1}` is not a valid Git branch name"),
         "{message}"
     );
-    assert!(environment.herdr.calls().is_empty());
+    // Only the read-only readiness probes reached Herdr.
+    assert!(
+        environment
+            .herdr
+            .calls()
+            .iter()
+            .all(|call| call[0] == "--version"
+                || call[..2] == ["status", "server"]
+                || call[..2] == ["api", "schema"]),
+        "{:?}",
+        environment.herdr.calls()
+    );
     assert!(environment.task_rows().is_empty());
 }
 

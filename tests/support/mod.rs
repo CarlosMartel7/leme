@@ -258,7 +258,9 @@ pub const HERDR_VARIABLES: [&str; 6] = [
 /// Each request is answered from files under `responses/`, keyed by its
 /// first two arguments (`pane-current`, `workspace-list`, `tab-list`,
 /// `worktree-open`, `status-server`, `api-schema`) or `version` for
-/// `--version`. A new fake
+/// `--version`. Unless a test sets its response, `tab create` answers with a
+/// new tab of the requested workspace, numbered from 2 like Herdr's, and
+/// `tab close` and `pane run` succeed. A new fake
 /// answers like a healthy Herdr whose server runs the tested protocol, and
 /// whose workspace, tab and pane lists are empty until a test fills them.
 /// Every invocation's arguments are recorded one per line, so tests can
@@ -288,6 +290,17 @@ impl FakeHerdr {
              case \"$1\" in --version) key=version ;; *) key=\"$1-$2\" ;; esac\n\
              response=\"$dir/responses/$key\"\n\
              if [ -f \"$response.hang\" ]; then exec {sleep} 30; fi\n\
+             if [ \"$key\" = tab-create ] && [ ! -f \"$response.stdout\" ] && [ ! -f \"$response.stderr\" ]; then\n\
+             previous=; for argument in \"$@\"; do case \"$previous\" in \
+             --workspace) workspace=\"$argument\" ;; --label) label=\"$argument\" ;; esac; \
+             previous=\"$argument\"; done\n\
+             count=$(( $({cat} \"$dir/tab-count\" 2>/dev/null || echo 1) + 1 ))\n\
+             printf '%s\\n' \"$count\" > \"$dir/tab-count\"\n\
+             printf '{{\"id\":\"cli:test\",\"result\":{{\"type\":\"tab_created\",\
+             \"tab\":{{\"tab_id\":\"%s:t%s\",\"workspace_id\":\"%s\",\"label\":\"%s\"}},\
+             \"root_pane\":{{\"pane_id\":\"%s:p%s\",\"workspace_id\":\"%s\"}}}}}}\\n' \
+             \"$workspace\" \"$count\" \"$workspace\" \"$label\" \"$workspace\" \"$count\" \"$workspace\"\n\
+             exit 0; fi\n\
              if [ ! -f \"$response.stdout\" ] && [ ! -f \"$response.stderr\" ]; then\n\
              printf 'unexpected request: %s\\n' \"$*\" >&2; exit 64; fi\n\
              if [ -f \"$response.stderr\" ]; then {cat} \"$response.stderr\" >&2; fi\n\
@@ -309,6 +322,9 @@ impl FakeHerdr {
         );
         fake.respond("workspace-list", &herdr_reply(json!({"workspaces": []})));
         fake.respond("tab-list", &herdr_reply(json!({"tabs": []})));
+        fake.respond("tab-close", &herdr_reply(json!({"type": "ok"})));
+        // `herdr pane run` prints nothing when it succeeds.
+        fake.respond("pane-run", "");
         fake
     }
 

@@ -76,6 +76,22 @@ fn parse_worktrees(list: &[u8]) -> Option<Vec<Worktree>> {
     (!worktrees.is_empty()).then_some(worktrees)
 }
 
+/// Whether the local branch `name` exists.
+pub fn branch_exists(directory: &Path, name: &str) -> Result<bool, DiscoveryError> {
+    let reference = format!("refs/heads/{name}");
+    let arguments = ["show-ref", "--verify", "--quiet", reference.as_str()];
+    let output = run_git(directory, &arguments)?;
+    match output.status.code() {
+        Some(0) => Ok(true),
+        // With --quiet, exit status 1 means the reference does not exist.
+        Some(1) => Ok(false),
+        _ => Err(DiscoveryError::GitFailed {
+            command: command_line(&arguments),
+            message: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+        }),
+    }
+}
+
 /// Why a branch name was refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvalidBranch {
