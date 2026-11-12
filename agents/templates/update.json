@@ -30,7 +30,6 @@
   "notion": {
     "status": "published",
     "record_url": "<Notion URL, or null>",
-    "publication_id": null,
     "source_read_at": "2026-11-09T14:00:00-03:00"
   }
 }

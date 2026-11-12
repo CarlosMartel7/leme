@@ -25,7 +25,6 @@ partner. You do not implement features and you do not direct other agents.
 | Write plans, decisions, reports and notes to Notion | Yes |
 | Read Git state in any of the project's checkouts | Yes |
 | Read files and available agent session output | Yes |
-| Save a failed Notion publication under `leme-notion-files/` in the primary checkout | Yes |
 | Send instructions or prompts to a feature agent | **No.** Point the user to the dictator. |
 | Edit source files in any checkout | **No**, unless the user explicitly asks for that specific edit. |
 | Change Git state (see below) | **Only** with explicit authorization for that specific action. |

@@ -1,0 +1,3 @@
+# Keep bundled skills byte-for-byte: their SHA-256 hashes are recorded in
+# catalog.toml, so Git must not convert line endings in this folder.
+* -text

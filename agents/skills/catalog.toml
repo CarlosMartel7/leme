@@ -1,0 +1,207 @@
+# Bundled workflow skills.
+#
+# Each [[skills]] entry is one skill directory in agents/skills/<name>/. The
+# directory is a byte-for-byte snapshot of the source named below, taken on
+# snapshot_date. Every file in the directory is listed under [[skills.files]]
+# with its size in bytes and SHA-256 hash; nothing else belongs to the skill.
+#
+# Fields:
+#   name          Installed directory name, equal to the skill's `name:`.
+#   kind          "requested": one of the ten skills F12 installs.
+#                 "dependency": a helper another bundled skill invokes.
+#   requested_as  Name used in the request, when it differs from `name`.
+#   source_path   Where the snapshot was taken from on the author's machine.
+#                 Provenance only: installation never reads it.
+#   source_name   Directory name at source_path.
+#   depends_on    Bundled skills this skill invokes and needs installed.
+#   references    Bundled skills its text mentions without invoking them.
+#   requirements  Tools, connectors or modes the skill expects at use time.
+#                 Disclosed, not installed or configured by Leme.
+
+schema_version = 1
+snapshot_date = "2026-11-12"
+
+[[skills]]
+name = "implement-feature-step"
+kind = "requested"
+source_path = "~/.claude/skills/implement-feature-step"
+source_name = "implement-feature-step"
+depends_on = []
+references = ["for-dummies", "pr-audit"]
+requirements = ["Git", "Notion connector"]
+
+[[skills.files]]
+path = "SKILL.md"
+size = 12712
+sha256 = "ce27e09b6178df802f645252b4aa1c86da451c3b976b6df5bf1da855cfaf4cdf"
+
+[[skills]]
+name = "implement-feature-yolo"
+kind = "requested"
+source_path = "~/.claude/skills/implement-feature-yolo"
+source_name = "implement-feature-yolo"
+depends_on = []
+references = ["for-dummies", "implement-feature-step", "pr-audit"]
+requirements = ["Git", "Notion connector"]
+
+[[skills.files]]
+path = "SKILL.md"
+size = 15799
+sha256 = "15350ebd586563df4411b2cb7ce153415f0404dde0e3a81d6dc5c17885cffb60"
+
+[[skills]]
+name = "for-dummies"
+kind = "requested"
+source_path = "~/.codex/skills/for-dummies"
+source_name = "for-dummies"
+depends_on = []
+references = []
+requirements = []
+
+[[skills.files]]
+path = "SKILL.md"
+size = 2588
+sha256 = "c1a255d62649981b550196f4ec3cb4e1729065ee7d6bee6909c0b321346a8a27"
+
+[[skills]]
+name = "plan-parallel-work"
+kind = "requested"
+source_path = "~/.codex/skills/plan-parallel-work"
+source_name = "plan-parallel-work"
+depends_on = []
+references = []
+requirements = ["Git", "Notion connector"]
+
+[[skills.files]]
+path = "SKILL.md"
+size = 4743
+sha256 = "094949539003b263453aafd9b4b7b3d5283da762e3aff43718b23907157afa07"
+
+[[skills]]
+name = "create-commit-kanban"
+kind = "requested"
+source_path = "~/.agents/skills/create-commit-kanban"
+source_name = "create-commit-kanban"
+depends_on = []
+references = []
+requirements = ["Notion connector"]
+
+[[skills.files]]
+path = "SKILL.md"
+size = 10720
+sha256 = "51db65cdbf95c479267588206f0a078ba5c48afd1bb2d50f9dfb7a9a005443d3"
+
+[[skills]]
+name = "grilling"
+kind = "requested"
+source_path = "~/.agents/skills/grilling"
+source_name = "grilling"
+depends_on = []
+references = []
+requirements = []
+
+[[skills.files]]
+path = "SKILL.md"
+size = 2077
+sha256 = "a146842ed93ca43d833550fa9adf02e58cb63c83fea9d4b4522995b82242d4e2"
+
+[[skills.files]]
+path = "agents/openai.yaml"
+size = 113
+sha256 = "1411d7df7d99b7e621a1ff8283c8133cc2464be63d064e52d8ce169c6800ee9b"
+
+[[skills]]
+name = "grill-with-docs"
+kind = "requested"
+requested_as = "grilling-with-docs"
+source_path = "~/.agents/skills/grill-with-docs"
+source_name = "grill-with-docs"
+depends_on = ["grilling", "domain-modeling"]
+references = []
+requirements = ["An agent that can invoke another skill by name (Claude Code Skill tool)"]
+
+[[skills.files]]
+path = "SKILL.md"
+size = 247
+sha256 = "7de372c13488f1ee96cc11cd8907b56b6809cc93eef776eeddd37de6b6cbe3fe"
+
+[[skills.files]]
+path = "agents/openai.yaml"
+size = 145
+sha256 = "94cd0ab161fb468a836349f5ed482ba58ce8e709a05c57ce533d739dbd35cca9"
+
+[[skills]]
+name = "plan-feature-commits"
+kind = "requested"
+source_path = "~/.agents/skills/plan-feature-commits"
+source_name = "plan-feature-commits"
+depends_on = []
+references = ["create-commit-kanban"]
+requirements = ["Git", "Notion connector"]
+
+[[skills.files]]
+path = "SKILL.md"
+size = 9987
+sha256 = "aebef1071de080c1666267d5875c500bcfa33089b719bb10449166aaf14b3421"
+
+[[skills]]
+name = "plan-to-notion"
+kind = "requested"
+source_path = "~/.agents/skills/plan-to-notion"
+source_name = "plan-to-notion"
+depends_on = []
+references = []
+requirements = ["Notion connector", "Plan collaboration mode"]
+
+[[skills.files]]
+path = "SKILL.md"
+size = 990
+sha256 = "53f5055b763040aa296ec6dd742d2524527cecbcf05ed3ec35b6da59915e476b"
+
+[[skills]]
+name = "pr-audit"
+kind = "requested"
+source_path = "~/.agents/skills/pr-audit"
+source_name = "pr-audit"
+depends_on = []
+references = ["for-dummies"]
+requirements = ["Git", "GitHub CLI (gh)", "Notion connector, to publish audits"]
+
+[[skills.files]]
+path = "SKILL.md"
+size = 37904
+sha256 = "45513f0f04821113c829050f2f70ad04f0324c14390458d15d54edec0ac959be"
+
+[[skills.files]]
+path = "agents/openai.yaml"
+size = 209
+sha256 = "3791af41628e1b76e2ce0d1404853a2e1f2b58ed8539b9632041ca268b857853"
+
+[[skills]]
+name = "domain-modeling"
+kind = "dependency"
+source_path = "~/.agents/skills/domain-modeling"
+source_name = "domain-modeling"
+depends_on = []
+references = []
+requirements = []
+
+[[skills.files]]
+path = "ADR-FORMAT.md"
+size = 2733
+sha256 = "944c92aa790e8fbdc9199640b170979abb8a34ba8d0fe18c2a01a63bce140ca0"
+
+[[skills.files]]
+path = "GLOSSARY-FORMAT.md"
+size = 2300
+sha256 = "21dcc40cdec8e151a829b98ab1517c1867bc444e3665134a98c6983411996801"
+
+[[skills.files]]
+path = "SKILL.md"
+size = 3346
+sha256 = "7b925d7b1e341a2eeae33ad68a8a8c0ab889a38ddd22a7598e4c240e5a7556a3"
+
+[[skills.files]]
+path = "agents/openai.yaml"
+size = 101
+sha256 = "f6bf2aa996c6e6f53fdd0708e18a0d16a56aed8322cca59fedbe3c0d2c75f06b"
