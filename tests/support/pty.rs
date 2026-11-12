@@ -120,6 +120,16 @@ impl Pty {
         }
     }
 
+    /// Reads output for `duration`, then returns the screen with all of it
+    /// applied, so the result reflects what the process has drawn by now.
+    pub fn screen_after(&mut self, duration: Duration) -> String {
+        let deadline = Instant::now() + duration;
+        while let Some(left) = deadline.checked_duration_since(Instant::now()) {
+            self.read_for(left.min(Duration::from_millis(50)));
+        }
+        self.screen()
+    }
+
     /// The screen after applying all output read so far.
     pub fn screen(&mut self) -> String {
         while let Some(consumed) = self.screen.apply_step(&self.output[self.applied..]) {
@@ -157,6 +167,12 @@ impl Pty {
                 self.screen()
             );
         }
+    }
+
+    /// Kills the process with SIGKILL, as a crash would, and waits for it.
+    pub fn kill(&mut self) -> ExitStatus {
+        self.child.kill().expect("kill the process");
+        self.child.wait().expect("wait for the killed process")
     }
 
     /// Types `line` and Enter, then returns what a program reading the

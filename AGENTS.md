@@ -32,7 +32,10 @@ work. Report proposed corrections before applying PR-audit adjustments.
   (`view`), kept separate so state can be tested without a terminal.
 - `src/config.rs`: `leme.toml` from the primary checkout; linked worktrees share
   preferences. Missing settings use defaults; invalid settings report errors.
-- `src/state/`: durable project identity, task associations, and schema migrations.
+- `src/state/`: durable project identity, task associations, the saved focus
+  timer, per-project timer locks (`locks/` beside the database) and the timer
+  writer, and schema migrations. Only the dashboard holding a project's timer
+  lock shows or writes its timer.
   Keep operational state outside disposable worktrees. Use transactions and
   database constraints for migrations and concurrent registration.
 - Git owns current branch/checkout facts; SQLite owns operational records;

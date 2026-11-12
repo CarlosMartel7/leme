@@ -2,20 +2,19 @@
 //! a new dashboard process would, and checks what that process recovers.
 //!
 //! Each test uses its own database in a disposable directory. Clock values
-//! are supplied, so no test waits for real time to pass.
+//! are supplied, so no test waits for real time to pass. Which dashboard may
+//! write the timer is tested in `timer_ownership.rs`.
 
 mod support;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Barrier};
-use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use leme::config::Preferences;
-use leme::dashboard::Snapshot;
 use leme::dashboard::app::{App, Effect, Input, TimerStatus};
+use leme::dashboard::{Snapshot, TimerAccess};
 use leme::git::Checkout;
-use leme::state::{StartOutcome, Store};
+use leme::state::Store;
 use leme::time::Moment;
 use leme::time::pomodoro::{Mode, Phase, Saved, SavedPhase, Timer};
 use rusqlite::{Connection, params};
@@ -196,173 +195,6 @@ fn every_change_made_from_the_dashboard_survives_a_reopen() {
 }
 
 #[test]
-fn a_second_start_keeps_the_running_or_paused_timer() {
-    let root = TestDir::new();
-    let path = database(&root);
-    let (mut store, project_id) = open(&path, "/work/leme");
-    let first = Timer::start(Mode::Focus, moment(10, 0)).saved();
-    let second = Timer::start(Mode::Break, moment(20, 30)).saved();
-
-    assert_eq!(
-        store.start_timer(&project_id, &first).unwrap(),
-        StartOutcome::Started
-    );
-    assert_eq!(
-        store.start_timer(&project_id, &second).unwrap(),
-        StartOutcome::AlreadyActive(first)
-    );
-
-    let paused = focus(SavedPhase::Paused {
-        remaining: secs(900),
-    });
-    store.save_timer(&project_id, &paused).unwrap();
-    assert_eq!(
-        store.start_timer(&project_id, &second).unwrap(),
-        StartOutcome::AlreadyActive(paused)
-    );
-    drop(store);
-    assert_eq!(reopened(&path, "/work/leme"), Some(paused));
-}
-
-#[test]
-fn a_start_replaces_an_elapsed_timer() {
-    let root = TestDir::new();
-    let path = database(&root);
-    let (mut store, project_id) = open(&path, "/work/leme");
-    let elapsed = focus(SavedPhase::Elapsed {
-        finished_at: wall(1_500),
-    });
-    store.save_timer(&project_id, &elapsed).unwrap();
-    let next = Timer::start(Mode::Break, moment(10, 2_000)).saved();
-
-    assert_eq!(
-        store.start_timer(&project_id, &next).unwrap(),
-        StartOutcome::Started
-    );
-    drop(store);
-    assert_eq!(reopened(&path, "/work/leme"), Some(next));
-}
-
-#[test]
-fn concurrent_starts_leave_exactly_one_timer() {
-    const STARTS: usize = 8;
-    let root = TestDir::new();
-    let path = database(&root);
-    let (_, project_id) = open(&path, "/work/leme");
-    let barrier = Arc::new(Barrier::new(STARTS));
-
-    let outcomes: Vec<(Saved, StartOutcome)> = thread::scope(|scope| {
-        let handles: Vec<_> = (0..STARTS)
-            .map(|index| {
-                let (barrier, path, project_id) = (barrier.clone(), &path, &project_id);
-                scope.spawn(move || {
-                    // Each thread is a separate dashboard with its own
-                    // connection.
-                    let mut store = Store::open(path).unwrap();
-                    let mode = if index % 2 == 0 {
-                        Mode::Focus
-                    } else {
-                        Mode::Break
-                    };
-                    let timer = Timer::start(mode, moment(10, index as u64)).saved();
-                    barrier.wait();
-                    (timer, store.start_timer(project_id, &timer).unwrap())
-                })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(|handle| handle.join().unwrap())
-            .collect()
-    });
-
-    let winners: Vec<Saved> = outcomes
-        .iter()
-        .filter(|(_, outcome)| *outcome == StartOutcome::Started)
-        .map(|(timer, _)| *timer)
-        .collect();
-    assert_eq!(winners.len(), 1, "{outcomes:?}");
-    let winner = winners[0];
-    for (_, outcome) in &outcomes {
-        assert!(
-            matches!(outcome, StartOutcome::Started)
-                || *outcome == StartOutcome::AlreadyActive(winner),
-            "every other start sees the winner: {outcomes:?}"
-        );
-    }
-    assert_eq!(reopened(&path, "/work/leme"), Some(winner));
-}
-
-#[test]
-fn a_start_waits_for_a_concurrent_writer_and_sees_its_timer() {
-    let root = TestDir::new();
-    let path = database(&root);
-    let (mut store, project_id) = open(&path, "/work/leme");
-    let theirs = focus(SavedPhase::Paused {
-        remaining: secs(77),
-    });
-
-    // Another process is in the middle of saving its timer.
-    let other = Connection::open(&path).unwrap();
-    other.busy_timeout(Duration::from_secs(10)).unwrap();
-    other.execute_batch("BEGIN IMMEDIATE").unwrap();
-    other
-        .execute(
-            "INSERT INTO timers (project_id, mode, duration_ms, phase, remaining_ms)
-             VALUES (?1, 'focus', 1500000, 'paused', 77000)",
-            params![project_id],
-        )
-        .unwrap();
-
-    let mine = Timer::start(Mode::Break, moment(10, 0)).saved();
-    let outcome = thread::scope(|scope| {
-        let start = scope.spawn(|| store.start_timer(&project_id, &mine));
-        thread::sleep(Duration::from_millis(200));
-        other.execute_batch("COMMIT").unwrap();
-        start.join().unwrap()
-    });
-
-    assert_eq!(
-        outcome.expect("the start waits for the lock instead of failing"),
-        StartOutcome::AlreadyActive(theirs)
-    );
-    assert_eq!(reopened(&path, "/work/leme"), Some(theirs));
-}
-
-#[test]
-fn a_dashboard_whose_start_was_refused_shows_the_existing_timer() {
-    let root = TestDir::new();
-    let path = database(&root);
-    let (mut store, project_id) = open(&path, "/work/leme");
-    let theirs = Timer::start(Mode::Focus, moment(10, 1_000)).saved();
-    store.start_timer(&project_id, &theirs).unwrap();
-
-    let (mut app, _) = App::new();
-    app.handle(Input::Tick(moment(50, 1_040)));
-    app.handle(Input::Collected(Ok(snapshot(&project_id, None))));
-    app.handle(Input::Tick(moment(60, 1_050)));
-    let Some(Effect::StartTimer { project_id, timer }) = app.handle(char_key('b')) else {
-        panic!("expected a start");
-    };
-    let found = match store.start_timer(&project_id, &timer).unwrap() {
-        StartOutcome::Started => panic!("the existing timer was replaced"),
-        StartOutcome::AlreadyActive(existing) => existing,
-    };
-    app.handle(Input::TimerWritten(Ok(Some(found))));
-
-    assert_eq!(
-        app.timer(),
-        Some(TimerStatus {
-            mode: Mode::Focus,
-            phase: Phase::Running,
-            remaining: FOCUS - secs(50),
-        })
-    );
-    drop(store);
-    assert_eq!(reopened(&path, "/work/leme"), Some(theirs));
-}
-
-#[test]
 fn each_project_keeps_its_own_timer() {
     let root = TestDir::new();
     let path = database(&root);
@@ -374,11 +206,7 @@ fn each_project_keeps_its_own_timer() {
     let two = Timer::start(Mode::Break, moment(10, 0)).saved();
 
     store.save_timer(&first, &one).unwrap();
-    assert_eq!(
-        store.start_timer(&second, &two).unwrap(),
-        StartOutcome::Started,
-        "another project's timer does not block a start"
-    );
+    store.save_timer(&second, &two).unwrap();
     store.clear_timer(&first).unwrap();
     drop(store);
 
@@ -474,12 +302,6 @@ fn the_schema_rejects_timers_it_cannot_recover() {
 /// Carries out a timer write the way the dashboard's writer does.
 fn apply(store: &mut Store, effect: Effect) {
     match effect {
-        Effect::StartTimer { project_id, timer } => {
-            assert_eq!(
-                store.start_timer(&project_id, &timer).unwrap(),
-                StartOutcome::Started
-            );
-        }
         Effect::SaveTimer { project_id, timer } => store.save_timer(&project_id, &timer).unwrap(),
         Effect::ClearTimer { project_id } => store.clear_timer(&project_id).unwrap(),
         Effect::Collect => panic!("expected a timer write"),
@@ -496,7 +318,7 @@ fn snapshot(project_id: &str, timer: Option<Saved>) -> Snapshot {
         },
         preferences: Preferences::default(),
         tasks: Vec::new(),
-        timer,
+        timer: TimerAccess::Owned(timer),
     }
 }
 

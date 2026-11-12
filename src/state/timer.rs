@@ -1,45 +1,25 @@
 //! The project's saved focus/break timer.
 //!
 //! Each project has at most one timer, kept here so it survives closing the
-//! dashboard and is shared by every checkout of the project. How the saved
-//! values are interpreted lives in [`crate::time::pomodoro`].
+//! dashboard and is shared by every checkout of the project. Only the
+//! dashboard holding the project's timer lock writes it (see
+//! [`super::TimerOwnership`]). How the saved values are interpreted lives in
+//! [`crate::time::pomodoro`].
 
 use std::fmt;
 use std::time::Duration;
 
 use rusqlite::types::Type;
-use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::{Failure, StateError, Store};
 use crate::time::pomodoro::{Mode, Saved, SavedPhase};
 use crate::time::{from_unix_millis, unix_millis};
 
-/// The result of [`Store::start_timer`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StartOutcome {
-    /// The new timer was saved.
-    Started,
-    /// Another process already has a running or paused timer for this
-    /// project. It was left in place and is returned instead.
-    AlreadyActive(Saved),
-}
-
 impl Store {
     /// The project's saved timer, if it has one.
     pub fn timer(&mut self, project_id: &str) -> Result<Option<Saved>, StateError> {
         read(&self.connection, project_id).map_err(|error| self.failure(error))
-    }
-
-    /// Saves `timer` as the project's new timer unless a running or paused
-    /// one is already saved, so two dashboards cannot start separate
-    /// intervals for the same project. An elapsed timer is replaced.
-    pub fn start_timer(
-        &mut self,
-        project_id: &str,
-        timer: &Saved,
-    ) -> Result<StartOutcome, StateError> {
-        self.start(project_id, timer)
-            .map_err(|error| self.failure(error))
     }
 
     /// Replaces the project's timer with `timer`.
@@ -56,20 +36,6 @@ impl Store {
             )
             .map(drop)
             .map_err(|error| self.failure(error.into()))
-    }
-
-    fn start(&mut self, project_id: &str, timer: &Saved) -> Result<StartOutcome, Failure> {
-        // The write lock is taken before reading, so a concurrent start waits
-        // and then sees this one's timer.
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if let Some(existing) = read(&transaction, project_id)?.filter(Saved::is_active) {
-            return Ok(StartOutcome::AlreadyActive(existing));
-        }
-        write(&transaction, project_id, timer)?;
-        transaction.commit()?;
-        Ok(StartOutcome::Started)
     }
 }
 

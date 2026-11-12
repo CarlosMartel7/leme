@@ -3,11 +3,14 @@
 //! The database survives the removal of any worktree. Its schema follows
 //! `MIGRATIONS`, and `PRAGMA user_version` records how many of them have run.
 
+mod lock;
 mod project;
 mod timer;
+mod writer;
 
+pub use lock::{Claim, TimerLock, TimerOwnership};
 pub use project::{Project, Task};
-pub use timer::StartOutcome;
+pub use writer::{TimerWrite, TimerWriter};
 
 use std::env;
 use std::fmt;
@@ -145,6 +148,11 @@ pub enum StateError {
         found: i64,
         supported: usize,
     },
+    /// The lock deciding which dashboard owns a project's timer could not be
+    /// used.
+    Lock { path: PathBuf, source: io::Error },
+    /// A timer write was attempted without owning the project's timer.
+    TimerNotOwned,
 }
 
 impl fmt::Display for StateError {
@@ -170,6 +178,12 @@ impl fmt::Display for StateError {
                  update Leme",
                 path.display()
             ),
+            Self::Lock { path, source } => {
+                write!(f, "cannot use the timer lock {}: {source}", path.display())
+            }
+            Self::TimerNotOwned => {
+                write!(f, "another dashboard owns this project's timer")
+            }
         }
     }
 }
@@ -179,7 +193,8 @@ impl std::error::Error for StateError {
         match self {
             Self::Directory { source, .. } => Some(source),
             Self::Database { source, .. } => Some(source),
-            Self::NoStateDirectory | Self::NewerSchema { .. } => None,
+            Self::Lock { source, .. } => Some(source),
+            Self::NoStateDirectory | Self::NewerSchema { .. } | Self::TimerNotOwned => None,
         }
     }
 }

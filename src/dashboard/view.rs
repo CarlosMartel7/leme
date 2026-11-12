@@ -13,7 +13,7 @@ use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph, Wrap};
 
-use super::app::{App, Load, TimerStatus};
+use super::app::{App, Load, TimerControl, TimerStatus};
 use super::{Snapshot, clock};
 use crate::time::pomodoro::Phase;
 
@@ -54,7 +54,7 @@ pub fn render(app: &App, frame: &mut Frame) {
     render_status(app, frame, status);
     render_footer(frame, footer);
     if app.help_visible() {
-        render_help(frame, frame.area());
+        render_help(app.timer_control(), frame, frame.area());
     }
 }
 
@@ -160,18 +160,38 @@ fn render_placeholder(load: &Load, frame: &mut Frame, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-/// One line with the focus/break timer and the keys that act on it.
+/// Below this width the line for a timer owned elsewhere uses its short form.
+const OWNER_MESSAGE_WIDTH: u16 = 56;
+
+/// One line with the focus/break timer and the keys that act on it, or why
+/// this dashboard does not control the timer.
 fn render_timer(app: &App, frame: &mut Frame, area: Rect) {
-    if !app.timer_ready() {
-        frame.render_widget(Paragraph::new(""), area);
-        return;
-    }
     let width = usize::from(area.width);
+    let line = match app.timer_control() {
+        TimerControl::Owner if app.timer_ready() => owned_timer_line(app, width),
+        TimerControl::Owner | TimerControl::Waiting => Line::default(),
+        TimerControl::HeldElsewhere => {
+            let message = if area.width < OWNER_MESSAGE_WIDTH {
+                "Another dashboard owns the timer"
+            } else {
+                "Another dashboard owns the timer; reopen after it closes"
+            };
+            Line::from(keep_start(message, width).yellow())
+        }
+        TimerControl::Unavailable(reason) => {
+            Line::from(keep_start(&format!("Timer unavailable: {reason}"), width).red())
+        }
+    };
+    frame.render_widget(Paragraph::new(line), area);
+}
+
+/// The timer line of the dashboard that owns the timer.
+fn owned_timer_line(app: &App, width: usize) -> Line<'static> {
     let (state, hints) = match app.timer() {
         None => (Span::raw("Timer"), "f focus  b break"),
         Some(timer) => timer_state(timer),
     };
-    let line = match app.timer_error() {
+    match app.timer_error() {
         Some(error) => {
             let room = width.saturating_sub(state.width() + 2);
             Line::from(vec![
@@ -181,8 +201,7 @@ fn render_timer(app: &App, frame: &mut Frame, area: Rect) {
             ])
         }
         None => Line::from(vec![state, Span::raw("  "), Span::raw(hints).dim()]),
-    };
-    frame.render_widget(Paragraph::new(line), area);
+    }
 }
 
 /// The timer's state, styled, and the keys that act on it.
@@ -241,19 +260,33 @@ fn render_footer(frame: &mut Frame, area: Rect) {
     frame.render_widget(Paragraph::new(hints.dim()), area);
 }
 
-fn render_help(frame: &mut Frame, area: Rect) {
+/// The help overlay. Timer keys are listed only where they can work; a
+/// dashboard that does not own the timer says why instead.
+fn render_help(control: &TimerControl, frame: &mut Frame, area: Rect) {
+    let timer_rows: &[(&str, &str)] = match control {
+        TimerControl::Owner | TimerControl::Waiting => &[
+            ("f / b", "start focus / break"),
+            ("p Space", "pause / resume timer"),
+            ("x", "cancel the timer"),
+        ],
+        TimerControl::HeldElsewhere => &[
+            ("timer", "owned by another dashboard"),
+            ("", "close it, then reopen this one"),
+        ],
+        TimerControl::Unavailable(_) => &[("timer", "unavailable; r retries")],
+    };
     let rows = [
         ("↑ k / ↓ j", "select a task"),
         ("g / G", "first / last task"),
-        ("f / b", "start focus / break"),
-        ("p Space", "pause / resume timer"),
-        ("x", "cancel the timer"),
+    ]
+    .iter()
+    .chain(timer_rows)
+    .chain(&[
         ("r", "refresh"),
         ("?", "close this help"),
         ("q Esc", "quit"),
-    ];
+    ]);
     let lines: Vec<Line> = rows
-        .iter()
         .map(|(keys, action)| {
             Line::from(vec![
                 Span::styled(format!("{keys:<11}"), Style::new().bold()),
@@ -262,7 +295,7 @@ fn render_help(frame: &mut Frame, area: Rect) {
         })
         .collect();
     let height = u16::try_from(lines.len()).unwrap_or(u16::MAX) + 2;
-    let popup = area.centered(Constraint::Max(36), Constraint::Max(height));
+    let popup = area.centered(Constraint::Max(44), Constraint::Max(height));
     frame.render_widget(Clear, popup);
     frame.render_widget(
         Paragraph::new(lines)

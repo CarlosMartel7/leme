@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-use super::{CollectError, Snapshot};
+use super::{CollectError, Snapshot, TimerAccess};
 use crate::config::ClockFormat;
 use crate::state::StateError;
 use crate::time::Moment;
@@ -30,10 +30,8 @@ pub enum Input {
     /// before every key, so the timer counts down and timer keys act at the
     /// moment they are pressed.
     Tick(Moment),
-    /// A timer write requested by an effect finished. `Some` carries the
-    /// running or paused timer another dashboard had already started, which
-    /// [`Effect::StartTimer`] left in place.
-    TimerWritten(Result<Option<Saved>, StateError>),
+    /// A timer write requested by an effect finished.
+    TimerWritten(Result<(), StateError>),
 }
 
 /// Work the caller must carry out on the app's behalf.
@@ -43,13 +41,28 @@ pub enum Effect {
     /// [`Input::Collected`]. Collection only reads Git and never starts an
     /// agent.
     Collect,
-    /// Save `timer` as the project's new timer unless another running or
-    /// paused timer is already saved, and deliver [`Input::TimerWritten`].
-    StartTimer { project_id: String, timer: Saved },
     /// Replace the project's saved timer and deliver [`Input::TimerWritten`].
+    /// Only requested by the dashboard that owns the project's timer.
     SaveTimer { project_id: String, timer: Saved },
     /// Remove the project's saved timer and deliver [`Input::TimerWritten`].
+    /// Only requested by the dashboard that owns the project's timer.
     ClearTimer { project_id: String },
+}
+
+/// Whether this dashboard controls the project's timer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TimerControl {
+    /// No collection has decided yet.
+    Waiting,
+    /// This dashboard owns the timer: it shows the clock and timer and is
+    /// the only one that changes the saved timer.
+    Owner,
+    /// Another dashboard of the project owns the timer. This one shows
+    /// neither the clock nor the timer and never writes it, until reopened
+    /// after the owner has closed.
+    HeldElsewhere,
+    /// Ownership could not be decided, for this reason; a refresh retries.
+    Unavailable(String),
 }
 
 /// What the dashboard shows about the timer at the latest tick.
@@ -85,6 +98,7 @@ pub struct App {
     quit: bool,
     /// The most recent local-time reading, if any has arrived.
     clock: Option<Reading>,
+    control: TimerControl,
     /// The time of the latest tick.
     now: Option<Moment>,
     timer: Option<Timer>,
@@ -108,6 +122,7 @@ impl App {
             help: false,
             quit: false,
             clock: None,
+            control: TimerControl::Waiting,
             now: None,
             timer: None,
             timer_restored: false,
@@ -138,9 +153,19 @@ impl App {
         self.help
     }
 
-    /// The most recent local-time reading, or `None` before the first one.
+    /// The most recent local-time reading to show: `None` before the first
+    /// one and whenever this dashboard does not own the timer.
     pub fn clock(&self) -> Option<&Reading> {
-        self.clock.as_ref()
+        self.owns_timer().then_some(self.clock.as_ref())?
+    }
+
+    /// Whether this dashboard controls the project's timer.
+    pub fn timer_control(&self) -> &TimerControl {
+        &self.control
+    }
+
+    fn owns_timer(&self) -> bool {
+        self.control == TimerControl::Owner
     }
 
     /// How the clock is written: the project's preference once a snapshot
@@ -163,8 +188,8 @@ impl App {
         })
     }
 
-    /// Whether timer keys work: the project and its saved timer have loaded
-    /// and the time is known.
+    /// Whether timer keys work: this dashboard owns the timer, the saved
+    /// timer has loaded and the time is known.
     pub fn timer_ready(&self) -> bool {
         self.timer_restored
     }
@@ -240,16 +265,20 @@ impl App {
         timer.update(now).then(|| self.save_timer())?
     }
 
-    /// Restores the saved timer once both the first snapshot and the time
-    /// are known. Returns a save when restoring finished a running interval,
-    /// so later processes see it elapsed too.
+    /// Restores the saved timer once this dashboard owns it and the time is
+    /// known. Returns a save when restoring finished a running interval, so
+    /// later processes see it elapsed too.
     fn restore_timer(&mut self) -> Option<Effect> {
-        if self.timer_restored {
+        if self.timer_restored || !self.owns_timer() {
             return None;
         }
         let (snapshot, now) = (self.snapshot.as_ref()?, self.now?);
+        let TimerAccess::Owned(saved) = &snapshot.timer else {
+            return None;
+        };
+        let saved = *saved;
         self.timer_restored = true;
-        let saved = snapshot.timer?;
+        let saved = saved?;
         let timer = Timer::restore(&saved, now);
         let finished = saved.is_active() && timer.phase() == Phase::Elapsed;
         self.timer = Some(timer);
@@ -270,7 +299,7 @@ impl App {
         let timer = Timer::start(mode, now);
         let saved = timer.saved();
         self.timer = Some(timer);
-        Some(Effect::StartTimer {
+        Some(Effect::SaveTimer {
             project_id,
             timer: saved,
         })
@@ -296,32 +325,44 @@ impl App {
 
     /// The time and project a timer key acts on, once timer keys work.
     fn timer_context(&self) -> Option<(Moment, String)> {
-        if !self.timer_restored {
+        if !self.timer_restored || !self.owns_timer() {
             return None;
         }
         Some((self.now?, self.snapshot.as_ref()?.project_id.clone()))
     }
 
-    /// A save of the current timer, or `None` without a timer or project.
+    /// A save of the current timer, or `None` without ownership, a timer or
+    /// a project.
     fn save_timer(&self) -> Option<Effect> {
+        if !self.owns_timer() {
+            return None;
+        }
         Some(Effect::SaveTimer {
             project_id: self.snapshot.as_ref()?.project_id.clone(),
             timer: self.timer.as_ref()?.saved(),
         })
     }
 
-    fn timer_written(&mut self, result: Result<Option<Saved>, StateError>) {
-        match result {
-            Ok(found) => {
-                self.timer_error = None;
-                // Another dashboard's interval wins over the one just started
-                // here, so both show the same timer.
-                if let (Some(saved), Some(now)) = (found, self.now) {
-                    self.timer = Some(Timer::restore(&saved, now));
-                }
-            }
-            Err(error) => self.timer_error = Some(format!("Timer not saved: {error}")),
+    fn timer_written(&mut self, result: Result<(), StateError>) {
+        self.timer_error = result
+            .err()
+            .map(|error| format!("Timer not saved: {error}"));
+    }
+
+    /// Adopts the first ownership decision a collection reports. Once owner
+    /// or not, the dashboard stays so; only an undecided failure is updated.
+    fn decide_control(&mut self, access: &TimerAccess) {
+        if matches!(
+            self.control,
+            TimerControl::Owner | TimerControl::HeldElsewhere
+        ) {
+            return;
         }
+        self.control = match access {
+            TimerAccess::Owned(_) => TimerControl::Owner,
+            TimerAccess::HeldElsewhere => TimerControl::HeldElsewhere,
+            TimerAccess::Unavailable(reason) => TimerControl::Unavailable(reason.clone()),
+        };
     }
 
     /// Starts a collection unless one is already running.
@@ -336,6 +377,7 @@ impl App {
     fn collected(&mut self, result: Result<Snapshot, CollectError>) -> Option<Effect> {
         match result {
             Ok(snapshot) => {
+                self.decide_control(&snapshot.timer);
                 self.snapshot = Some(snapshot);
                 self.load = Load::Ready;
                 self.select(Some(self.selected));

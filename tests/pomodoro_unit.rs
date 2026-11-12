@@ -11,7 +11,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use leme::config::Preferences;
 use leme::dashboard::app::{App, Effect, Input, TimerStatus};
-use leme::dashboard::{Snapshot, view};
+use leme::dashboard::{Snapshot, TimerAccess, view};
 use leme::git::Checkout;
 use leme::state::StateError;
 use leme::time::Moment;
@@ -315,7 +315,7 @@ fn snapshot(timer: Option<Saved>) -> Snapshot {
         },
         preferences: Preferences::default(),
         tasks: Vec::new(),
-        timer,
+        timer: TimerAccess::Owned(timer),
     }
 }
 
@@ -369,7 +369,7 @@ fn keys_start_pause_resume_and_cancel_the_timer() {
     let started = press(&mut app, 'f', at(0));
     assert_eq!(
         started,
-        Some(Effect::StartTimer {
+        Some(Effect::SaveTimer {
             project_id: PROJECT.to_owned(),
             timer: Timer::start(Mode::Focus, at(0)).saved(),
         })
@@ -461,7 +461,7 @@ fn the_countdown_elapses_on_a_tick_and_stays_visible() {
     // A new interval replaces it; x would dismiss it.
     assert!(matches!(
         press(&mut app, 'f', at(5_000)),
-        Some(Effect::StartTimer { .. })
+        Some(Effect::SaveTimer { .. })
     ));
 }
 
@@ -535,15 +535,22 @@ fn restoring_waits_for_the_time_and_saves_an_interval_that_ran_out() {
 }
 
 #[test]
-fn another_dashboards_running_timer_replaces_a_refused_start() {
-    let (mut app, _) = loaded(None, at(0));
-    press(&mut app, 'b', at(100));
-    let theirs = saved(SavedPhase::Running {
-        remaining: secs(900),
-        since: wall(40),
-    });
-    assert_eq!(app.handle(Input::TimerWritten(Ok(Some(theirs)))), None);
-    assert_eq!(app.timer(), status(Mode::Focus, Phase::Running, secs(840)));
+fn a_dashboard_that_does_not_own_the_timer_never_requests_a_write() {
+    let (mut app, _) = App::new();
+    app.handle(Input::Tick(at(0)));
+    let mut held = snapshot(None);
+    held.timer = TimerAccess::HeldElsewhere;
+    assert_eq!(app.handle(Input::Collected(Ok(held))), None);
+    assert!(!app.timer_ready());
+
+    for (seconds, key) in [(1, 'f'), (2, 'b'), (3, 'p'), (4, ' '), (5, 'x')] {
+        assert_eq!(press(&mut app, key, at(seconds)), None, "{key:?}");
+    }
+    // Ticks long past any interval, and across a clock jump, save nothing.
+    for now in [at(301), at(1_501), moment(9_000, 86_400)] {
+        assert_eq!(app.handle(Input::Tick(now)), None);
+    }
+    assert_eq!(app.timer(), None);
 }
 
 #[test]
@@ -564,7 +571,7 @@ fn a_failed_write_is_shown_until_a_write_succeeds() {
         "the timer keeps running on screen"
     );
 
-    app.handle(Input::TimerWritten(Ok(None)));
+    app.handle(Input::TimerWritten(Ok(())));
     assert_eq!(app.timer_error(), None);
 }
 

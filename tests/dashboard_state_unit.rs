@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use leme::config::{ClockFormat, Preferences};
-use leme::dashboard::app::{App, Effect, Input, Load};
-use leme::dashboard::{CollectError, Snapshot, clock, view};
+use leme::dashboard::app::{App, Effect, Input, Load, TimerControl};
+use leme::dashboard::{CollectError, Snapshot, TimerAccess, clock, view};
 use leme::git::{Checkout, DiscoveryError};
 use leme::state::Task;
 use leme::time::local::{LocalTime, Unavailable};
@@ -36,7 +36,7 @@ fn snapshot(task_count: usize) -> Snapshot {
                 worktree: PathBuf::from(format!("/work/leme-task-{index}")),
             })
             .collect(),
-        timer: None,
+        timer: TimerAccess::Owned(None),
     }
 }
 
@@ -104,7 +104,7 @@ fn refresh_requests_only_a_read_only_collection() {
         Effect::Collect => {}
         // Timer writes only touch Leme's own state database, and only timer
         // keys request them.
-        Effect::StartTimer { .. } | Effect::SaveTimer { .. } | Effect::ClearTimer { .. } => {
+        Effect::SaveTimer { .. } | Effect::ClearTimer { .. } => {
             panic!("refresh requested a timer write: {effect:?}")
         }
     }
@@ -330,14 +330,15 @@ fn the_clock_is_written_in_the_chosen_format() {
 }
 
 #[test]
-fn the_header_shows_the_clock_whether_or_not_the_project_loaded() {
+fn the_header_shows_the_clock_only_once_this_dashboard_owns_the_timer() {
     let (mut app, _) = App::new();
     assert!(app.clock().is_none());
     app.handle(Input::Clock(Ok(local_time(14, 5, Some("-03")))));
-    assert!(screen_contains(&render(&app, 40, 16), "14:05 -03"));
+    assert!(app.clock().is_none(), "ownership is not decided yet");
+    assert!(!screen_contains(&render(&app, 40, 16), "14:05"));
 
     app.handle(Input::Collected(Err(failure())));
-    assert!(screen_contains(&render(&app, 40, 16), "14:05 -03"));
+    assert!(!screen_contains(&render(&app, 40, 16), "14:05"));
 
     let mut snapshot = snapshot(0);
     snapshot.preferences.clock_format = ClockFormat::TwelveHour;
@@ -346,4 +347,65 @@ fn the_header_shows_the_clock_whether_or_not_the_project_loaded() {
 
     app.handle(Input::Clock(Err(Unavailable)));
     assert!(screen_contains(&render(&app, 40, 16), "--:--"));
+}
+
+#[test]
+fn a_dashboard_that_does_not_own_the_timer_shows_neither_clock_nor_timer() {
+    let (mut app, _) = App::new();
+    app.handle(Input::Clock(Ok(local_time(14, 5, Some("-03")))));
+    let mut held = snapshot(0);
+    held.timer = TimerAccess::HeldElsewhere;
+    app.handle(Input::Collected(Ok(held)));
+    assert_eq!(app.timer_control(), &TimerControl::HeldElsewhere);
+    assert!(app.clock().is_none());
+
+    let narrow = render(&app, 40, 16);
+    assert!(!screen_contains(&narrow, "14:05"));
+    assert!(screen_contains(&narrow, "Another dashboard owns the timer"));
+    assert!(
+        screen_contains(&narrow, "Tasks (0)"),
+        "project information stays"
+    );
+    let wide = render(&app, 80, 24);
+    assert!(screen_contains(&wide, "reopen after it closes"));
+
+    // A later refresh that would find the lock free does not take over.
+    app.handle(char_key('r'));
+    app.handle(Input::Collected(Ok(snapshot(0))));
+    assert_eq!(app.timer_control(), &TimerControl::HeldElsewhere);
+}
+
+#[test]
+fn an_unusable_timer_lock_is_reported_and_retried_on_refresh() {
+    let (mut app, _) = App::new();
+    let mut failed = snapshot(0);
+    failed.timer = TimerAccess::Unavailable("cannot use the timer lock".to_owned());
+    app.handle(Input::Collected(Ok(failed)));
+    assert!(screen_contains(
+        &render(&app, 80, 24),
+        "Timer unavailable: cannot use the timer lock"
+    ));
+
+    app.handle(char_key('r'));
+    app.handle(Input::Collected(Ok(snapshot(0))));
+    assert_eq!(app.timer_control(), &TimerControl::Owner);
+}
+
+#[test]
+fn help_lists_timer_keys_only_where_they_work() {
+    let mut owner = loaded(0);
+    owner.handle(char_key('?'));
+    let rows = render(&owner, 80, 24);
+    assert!(screen_contains(&rows, "start focus / break"));
+    assert!(!screen_contains(&rows, "owned by another dashboard"));
+
+    let (mut other, _) = App::new();
+    let mut held = snapshot(0);
+    held.timer = TimerAccess::HeldElsewhere;
+    other.handle(Input::Collected(Ok(held)));
+    other.handle(char_key('?'));
+    let rows = render(&other, 80, 24);
+    assert!(screen_contains(&rows, "owned by another dashboard"));
+    assert!(screen_contains(&rows, "close it, then reopen this one"));
+    assert!(!screen_contains(&rows, "start focus / break"));
 }

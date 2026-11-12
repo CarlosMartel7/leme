@@ -2,9 +2,9 @@
 
 use std::env;
 use std::io::{self, IsTerminal};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread::{self, JoinHandle};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use clap::Args;
@@ -14,10 +14,9 @@ use ratatui::DefaultTerminal;
 use super::Error;
 use crate::dashboard::app::{App, Effect, Input};
 use crate::dashboard::{self, view};
-use crate::state::{StartOutcome, StateError, Store};
+use crate::state::{Store, TimerOwnership, TimerWrite, TimerWriter};
 use crate::time::Moment;
 use crate::time::local::{self, Reading};
-use crate::time::pomodoro::Saved;
 
 #[derive(Debug, Args)]
 pub struct DashboardArgs {}
@@ -36,11 +35,24 @@ pub fn run(_args: &DashboardArgs) -> Result<(), Error> {
     }
     let mut session = Session::start().map_err(Error::Terminal)?;
     let (sender, receiver) = mpsc::channel();
+    // Collections claim the project's timer lock through this; the writer
+    // keeps a clone, so the lock outlives every pending timer write.
+    let ownership = TimerOwnership::new();
     // Declared after the session so it is dropped first: pending timer
     // writes finish before the terminal is restored and the process exits.
-    let writer = TimerWriter::spawn(sender.clone());
+    let writer = TimerWriter::spawn(ownership.clone(), Store::open_default, {
+        let sender = sender.clone();
+        // The receiver is gone only when the dashboard has closed.
+        move |result| drop(sender.send(Input::TimerWritten(result)))
+    });
+    let context = Context {
+        directory,
+        sender,
+        ownership,
+        writer,
+    };
     let (mut app, effect) = App::new();
-    perform(effect, &directory, &sender, &writer);
+    context.perform(effect);
     let mut ticker = Ticker::default();
     while !app.should_quit() {
         session
@@ -49,33 +61,45 @@ pub fn run(_args: &DashboardArgs) -> Result<(), Error> {
             .map_err(Error::Terminal)?;
         for input in next_inputs(&receiver, &mut ticker).map_err(Error::Terminal)? {
             if let Some(effect) = app.handle(input) {
-                perform(effect, &directory, &sender, &writer);
+                context.perform(effect);
             }
         }
     }
     Ok(())
 }
 
-/// Carries out an effect requested by the app.
-fn perform(effect: Effect, directory: &Path, sender: &Sender<Input>, writer: &TimerWriter) {
-    let write = match effect {
-        Effect::Collect => {
-            collect_in_background(directory.to_path_buf(), sender.clone());
-            return;
-        }
-        Effect::StartTimer { project_id, timer } => TimerWrite::Start { project_id, timer },
-        Effect::SaveTimer { project_id, timer } => TimerWrite::Save { project_id, timer },
-        Effect::ClearTimer { project_id } => TimerWrite::Clear { project_id },
-    };
-    writer.send(write);
+/// What the loop needs to carry out the app's effects.
+struct Context {
+    directory: PathBuf,
+    sender: Sender<Input>,
+    ownership: TimerOwnership,
+    writer: TimerWriter,
 }
 
-/// Collects a snapshot on another thread so keys stay responsive meanwhile.
-fn collect_in_background(directory: PathBuf, sender: Sender<Input>) {
-    thread::spawn(move || {
-        // The receiver is gone only when the dashboard has already closed.
-        let _ = sender.send(Input::Collected(dashboard::collect(&directory)));
-    });
+impl Context {
+    /// Carries out an effect requested by the app.
+    fn perform(&self, effect: Effect) {
+        let write = match effect {
+            Effect::Collect => {
+                self.collect_in_background();
+                return;
+            }
+            Effect::SaveTimer { project_id, timer } => TimerWrite::Save { project_id, timer },
+            Effect::ClearTimer { project_id } => TimerWrite::Clear { project_id },
+        };
+        self.writer.send(write);
+    }
+
+    /// Collects a snapshot on another thread so keys stay responsive
+    /// meanwhile.
+    fn collect_in_background(&self) {
+        let (directory, sender) = (self.directory.clone(), self.sender.clone());
+        let ownership = self.ownership.clone();
+        thread::spawn(move || {
+            // The receiver is gone only when the dashboard has already closed.
+            let _ = sender.send(Input::Collected(dashboard::collect(&directory, &ownership)));
+        });
+    }
 }
 
 /// Waits for the next inputs for the app, in the order to apply them.
@@ -128,80 +152,6 @@ impl Ticker {
             inputs.push(Input::Clock(reading));
         }
         Some(inputs)
-    }
-}
-
-/// A timer change to store.
-enum TimerWrite {
-    Start { project_id: String, timer: Saved },
-    Save { project_id: String, timer: Saved },
-    Clear { project_id: String },
-}
-
-/// Stores timer changes on one background thread, in the order they were
-/// made, so a slow or locked database never blocks keys and a pause followed
-/// by a quick resume is never stored the other way round.
-struct TimerWriter {
-    jobs: Option<Sender<TimerWrite>>,
-    thread: Option<JoinHandle<()>>,
-}
-
-impl TimerWriter {
-    /// Starts the writer. Each result is delivered as
-    /// [`Input::TimerWritten`] on `results`.
-    fn spawn(results: Sender<Input>) -> Self {
-        let (jobs, queue) = mpsc::channel::<TimerWrite>();
-        let thread = thread::spawn(move || {
-            let mut store = None;
-            for job in queue {
-                let result = write_timer(&mut store, job);
-                // The receiver is gone only when the dashboard has closed.
-                let _ = results.send(Input::TimerWritten(result));
-            }
-        });
-        Self {
-            jobs: Some(jobs),
-            thread: Some(thread),
-        }
-    }
-
-    fn send(&self, write: TimerWrite) {
-        if let Some(jobs) = &self.jobs {
-            // The thread only stops after a panic, already reported on stderr.
-            let _ = jobs.send(write);
-        }
-    }
-}
-
-impl Drop for TimerWriter {
-    /// Waits for queued writes, so quitting right after pausing keeps the
-    /// pause.
-    fn drop(&mut self) {
-        drop(self.jobs.take());
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
-    }
-}
-
-/// Applies one timer change, opening the state database on first use and
-/// again after a failure to open it.
-fn write_timer(store: &mut Option<Store>, job: TimerWrite) -> Result<Option<Saved>, StateError> {
-    let store = match store {
-        Some(store) => store,
-        None => store.insert(Store::open_default()?),
-    };
-    match job {
-        TimerWrite::Start { project_id, timer } => {
-            Ok(match store.start_timer(&project_id, &timer)? {
-                StartOutcome::Started => None,
-                StartOutcome::AlreadyActive(existing) => Some(existing),
-            })
-        }
-        TimerWrite::Save { project_id, timer } => {
-            store.save_timer(&project_id, &timer).map(|()| None)
-        }
-        TimerWrite::Clear { project_id } => store.clear_timer(&project_id).map(|()| None),
     }
 }
 
