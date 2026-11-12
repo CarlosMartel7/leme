@@ -8,6 +8,7 @@ use std::path::Path;
 use std::sync::Barrier;
 use std::thread;
 
+use leme::state::SCHEMA_VERSION;
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 use support::{
@@ -197,7 +198,7 @@ fn concurrent_first_access_resolves_to_one_project() {
         let id = project_id(&statuses[0]);
         assert!(statuses.iter().all(|status| project_id(status) == id));
         assert_eq!(project_count(root.path()), 1);
-        assert_eq!(schema_version(&connect(root.path())), 1);
+        assert_eq!(schema_version(&connect(root.path())), SCHEMA_VERSION as i64);
     }
 }
 
@@ -218,8 +219,8 @@ fn registered_tasks_are_reported_in_text_and_json() {
     assert_eq!(
         status["tasks"],
         json!([
-            {"id": "T-1", "branch": "feature/one", "worktree": worktree},
-            {"id": "T-2", "branch": "feature/two", "worktree": other_worktree},
+            {"id": "T-1", "branch": "feature/one", "worktree": worktree, "workspace": null},
+            {"id": "T-2", "branch": "feature/two", "worktree": other_worktree, "workspace": null},
         ])
     );
 
@@ -299,7 +300,7 @@ fn a_failed_migration_rolls_back_and_can_be_retried() {
     let status = status_json(&repository, root.path());
 
     assert_eq!(status["tasks"], json!([]));
-    assert_eq!(schema_version(&connection), 1);
+    assert_eq!(schema_version(&connection), SCHEMA_VERSION as i64);
 }
 
 #[test]

@@ -7,9 +7,12 @@ project preferences, and reports locally registered tasks. `leme doctor` checks 
 supports. `leme dashboard` shows the same project in a full-screen terminal view.
 
 `leme herdr context` reports the Herdr workspace, tab and pane it was run from.
+`leme feature open` opens a task's existing feature checkout in its own Herdr
+workspace.
 
-The broader plan includes opening Herdr workspaces, agent sessions, and live
-agent data in the dashboard. Those integrations are not implemented yet.
+The broader plan includes creating feature checkouts with a default tab layout,
+agent sessions, and live agent data in the dashboard. Those integrations are not
+implemented yet.
 
 ## Build and install
 
@@ -119,6 +122,35 @@ with an error.
 
 The Herdr plugin in `plugin/` opens this report in a pane next to the pane it
 is invoked from. See [the Herdr plugin](docs/herdr-plugin.md) to link and use it.
+
+## Open a feature
+
+Run from any checkout of the project:
+
+```sh
+leme feature open T-12 --branch feature/search   # first time
+leme feature open T-12                           # afterwards
+leme feature open T-12 --json
+```
+
+The task ID is yours to choose, such as a ticket or card key. The first time a
+task is opened, `--branch` names its feature branch; Leme records the task, its
+branch and its checkout in the local state database, and later invocations use
+the recorded branch. A task owns one branch, and a branch belongs to one task.
+
+The branch must already be checked out in a linked worktree of the repository,
+for example after `git worktree add ../search feature/search`. Leme refuses a
+branch checked out in the main checkout, which the whole project shares, and
+names the checkout it found. If the worktree was moved, the record follows
+Git and the previous path is reported.
+
+Herdr is checked as for `leme herdr context`, then asked to open the checkout's
+workspace and focus it. Herdr keeps one workspace per checkout, so opening the
+task again focuses the same workspace instead of adding another; a workspace
+that was closed is reopened and its new ID recorded. Existing workspace names
+are left unchanged. The report also shows the project's integration branch
+(`integration_branch` in `leme.toml`). Git is only read; Herdr may also open a
+workspace for the main checkout, which it uses as the source of the worktree.
 
 ## Open the dashboard
 

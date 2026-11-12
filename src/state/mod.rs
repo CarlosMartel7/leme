@@ -4,8 +4,10 @@
 //! `MIGRATIONS`, and `PRAGMA user_version` records how many of them have run.
 
 mod project;
+mod tasks;
 
-pub use project::{Project, Task};
+pub use project::Project;
+pub use tasks::{Task, TaskConflict};
 
 use std::env;
 use std::fmt;
@@ -16,7 +18,10 @@ use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 
-const MIGRATIONS: [&str; 1] = [include_str!("migrations/001_project.sql")];
+const MIGRATIONS: [&str; 2] = [
+    include_str!("migrations/001_project.sql"),
+    include_str!("migrations/002_task_workspace.sql"),
+];
 
 /// The schema version this Leme creates and understands.
 pub const SCHEMA_VERSION: usize = MIGRATIONS.len();

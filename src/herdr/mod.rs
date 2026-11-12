@@ -1,15 +1,17 @@
-//! A read-only adapter for the installed Herdr.
+//! An adapter for the installed Herdr.
 //!
 //! [`Herdr`] runs the `herdr` CLI and reads its JSON replies. [`context`]
 //! resolves the workspace, tab and pane a Leme process was invoked from,
 //! using the IDs Herdr supplied rather than whatever is focused when the
 //! request runs, so a user switching workspaces cannot redirect it.
+//! [`open_worktree`] opens the workspace of an existing checkout.
 //!
 //! Before talking to Herdr, callers check [`Herdr::readiness`], which runs
 //! the same Herdr checks as `leme doctor`.
 
 mod cli;
 mod context;
+mod workspaces;
 
 use std::fmt;
 use std::time::Duration;
@@ -18,6 +20,7 @@ use crate::diagnostics::Check;
 
 pub use cli::{Herdr, Readiness, RequestFailure};
 pub use context::{Context, Invocation, PaneInfo, TabInfo, WorkspaceInfo, resolve};
+pub use workspaces::{OpenedWorkspace, open_worktree};
 
 /// The Herdr API operations this adapter sends. Each is one of the
 /// operations `leme doctor` confirms Herdr provides.
@@ -29,6 +32,8 @@ pub enum Operation {
     TabList,
     /// `workspace.list`: every workspace.
     WorkspaceList,
+    /// `worktree.open`: the workspace of an existing checkout, opened if needed.
+    WorktreeOpen,
 }
 
 impl Operation {
@@ -38,6 +43,7 @@ impl Operation {
             Self::PaneCurrent => "pane.current",
             Self::TabList => "tab.list",
             Self::WorkspaceList => "workspace.list",
+            Self::WorktreeOpen => "worktree.open",
         }
     }
 }
@@ -48,7 +54,7 @@ impl fmt::Display for Operation {
     }
 }
 
-/// Why the Herdr context could not be resolved.
+/// Why a Herdr request could not be made or did not give a usable answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HerdrError {
     /// No `herdr` executable was found.
@@ -67,7 +73,7 @@ pub enum HerdrError {
     },
     /// Herdr does not know an ID it was asked about.
     NotFound { kind: &'static str, id: String },
-    /// Herdr places the pane or tab somewhere other than the supplied IDs say.
+    /// Herdr places the pane, tab or checkout somewhere other than Leme expects.
     Mismatch {
         kind: &'static str,
         supplied: String,
