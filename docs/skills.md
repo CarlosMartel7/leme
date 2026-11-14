@@ -50,6 +50,7 @@ helper because `grill-with-docs` invokes it.
 | `plan-feature-commits` | Git, Notion connector |
 | `plan-to-notion` | Notion connector, Plan collaboration mode |
 | `pr-audit` | Git, GitHub CLI (`gh`), Notion connector to publish audits |
+| `dev-doc` | Git, GitHub CLI (`gh`), Notion connector |
 | `domain-modeling` | Nothing |
 
 Leme does not install or configure these tools. The skills keep their own

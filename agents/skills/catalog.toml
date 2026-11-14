@@ -7,7 +7,7 @@
 #
 # Fields:
 #   name          Installed directory name, equal to the skill's `name:`.
-#   kind          "requested": one of the ten skills F12 installs.
+#   kind          "requested": one of the workflow skills F12 installs.
 #                 "dependency": a helper another bundled skill invokes.
 #   requested_as  Name used in the request, when it differs from `name`.
 #   source_path   Where the snapshot was taken from on the author's machine.
@@ -176,6 +176,20 @@ sha256 = "45513f0f04821113c829050f2f70ad04f0324c14390458d15d54edec0ac959be"
 path = "agents/openai.yaml"
 size = 209
 sha256 = "3791af41628e1b76e2ce0d1404853a2e1f2b58ed8539b9632041ca268b857853"
+
+[[skills]]
+name = "dev-doc"
+kind = "requested"
+source_path = "~/.codex/skills/dev-doc"
+source_name = "dev-doc"
+depends_on = []
+references = ["pr-audit"]
+requirements = ["Git", "GitHub CLI (gh)", "Notion connector"]
+
+[[skills.files]]
+path = "SKILL.md"
+size = 8160
+sha256 = "4160568a62ca78b26fbef46dd7bd931f60c0a105cf39e8e56f43d6fb29e2b161"
 
 [[skills]]
 name = "domain-modeling"

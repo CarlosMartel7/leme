@@ -19,7 +19,7 @@ use support::skills::{
     catalog_source_paths, field_values, snapshot, target_skills,
 };
 
-const SKILL_COUNT: usize = 11;
+const SKILL_COUNT: usize = 12;
 
 fn stdout(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
@@ -116,7 +116,7 @@ fn supporting_files_and_the_helper_dependency_are_installed() {
         .into_iter()
         .filter(|(_, kind)| kind == "requested")
         .count();
-    assert_eq!(requested, 10);
+    assert_eq!(requested, 11);
 }
 
 #[test]

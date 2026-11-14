@@ -82,6 +82,7 @@ in the catalog is not part of the skill.
 | `plan-feature-commits` | requested | `~/.agents/skills/plan-feature-commits` | Git, Notion connector |
 | `plan-to-notion` | requested | `~/.agents/skills/plan-to-notion` | Notion connector, Plan collaboration mode |
 | `pr-audit` | requested | `~/.agents/skills/pr-audit` | Git, GitHub CLI, Notion connector to publish |
+| `dev-doc` | requested | `~/.codex/skills/dev-doc` | Git, GitHub CLI, Notion connector |
 | `domain-modeling` | dependency of `grill-with-docs` | `~/.agents/skills/domain-modeling` | Nothing |
 
 The source paths are provenance only. Installation reads the bundled copies.
