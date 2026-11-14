@@ -9,6 +9,9 @@ integration_branch = "main"
 
 # Agent started for a feature: "claude" or "codex".
 preferred_agent = "claude"
+
+# How the dashboard shows the local time: "24h" (14:05) or "12h" (2:05 PM).
+clock_format = "24h"
 ```
 
 ## Lookup
@@ -24,6 +27,7 @@ is ignored. A submodule is a separate repository with its own main checkout.
 | --- | --- |
 | `integration_branch` | `main` |
 | `preferred_agent` | `claude` |
+| `clock_format` | `24h` |
 
 The defaults apply to any setting the file leaves out, and to all settings
 when the file does not exist.
@@ -32,5 +36,5 @@ when the file does not exist.
 
 Leme stops and names the file when it cannot use it, instead of falling back
 to the defaults. An error quotes the offending line and field for invalid
-TOML, an unknown setting, a value of the wrong type, an unsupported agent or an
-empty branch name.
+TOML, an unknown setting, a value of the wrong type, an unsupported agent or
+clock format, or an empty branch name.

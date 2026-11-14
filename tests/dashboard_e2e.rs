@@ -13,9 +13,10 @@ use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::time::Duration;
 
 use support::pty::Pty;
-use support::{Leme, TestDir, failure_message, git, init_repository};
+use support::{Leme, TestDir, add_worktree, failure_message, git, init_repository};
 
 /// A narrow terminal, as in a Herdr side pane.
 const NARROW: (u16, u16) = (40, 16);
@@ -167,4 +168,104 @@ fn rfind(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .rposition(|window| window == needle)
+}
+
+/// The header row, where only the timer's owner shows the clock.
+fn header(pty: &mut Pty) -> String {
+    pty.screen().lines().next().unwrap_or_default().to_owned()
+}
+
+/// A dashboard of `directory` at 60x16, once its timer line has settled.
+fn open_dashboard(directory: &Path, root: &Path, expected: &str) -> Pty {
+    let command = Leme::new(directory, root, &["dashboard"]).into_command();
+    let mut pty = Pty::spawn(command, 60, 16);
+    pty.expect("Up to date");
+    pty.expect(expected);
+    pty
+}
+
+#[test]
+#[ignore = "drives a real pseudo-terminal; run with --ignored --test-threads=1"]
+fn a_second_dashboard_cannot_control_the_timer() {
+    let root = TestDir::new();
+    let repository = root.path().join("project");
+    let worktree = root.path().join("feature");
+    init_repository(&repository);
+    add_worktree(&repository, &worktree, "feature/one");
+
+    let mut owner = open_dashboard(&repository, root.path(), "f focus  b break");
+    assert!(
+        header(&mut owner).chars().any(|c| c.is_ascii_digit()),
+        "clock"
+    );
+
+    // A dashboard in a linked worktree of the same repository.
+    let mut other = open_dashboard(
+        &worktree,
+        root.path(),
+        "Another dashboard owns the timer; reopen after it closes",
+    );
+    assert!(
+        !header(&mut other).chars().any(|c| c.is_ascii_digit()),
+        "no clock: {}",
+        header(&mut other)
+    );
+    assert!(
+        other.screen().contains("feature/one"),
+        "project details stay"
+    );
+
+    // Neither starting nor any other timer key does anything there.
+    other.send(b"f");
+    other.send(b"b");
+    other.send(b"p");
+    other.send(b"x");
+    owner.send(b"f");
+    owner.expect("p pause  x cancel");
+    other.send(b"x");
+    other.send(b" ");
+    let screen = other.screen_after(Duration::from_millis(600));
+    assert!(
+        screen.contains("Another dashboard owns the timer"),
+        "{screen}"
+    );
+    assert!(
+        !screen.contains("Focus") && !screen.contains("Break"),
+        "{screen}"
+    );
+    let screen = owner.screen_after(Duration::from_millis(300));
+    assert!(
+        screen.contains("p pause  x cancel"),
+        "still running: {screen}"
+    );
+
+    // The owner quits; the other dashboard does not take over.
+    owner.send(b"q");
+    assert!(owner.wait().success());
+    other.send(b"r");
+    other.expect("Refreshing");
+    other.expect("Up to date");
+    let screen = other.screen_after(Duration::from_millis(300));
+    assert!(
+        screen.contains("Another dashboard owns the timer"),
+        "{screen}"
+    );
+    other.send(b"q");
+    assert!(other.wait().success());
+
+    // Reopened, the worktree's dashboard owns the timer and restores it.
+    let mut reopened = open_dashboard(&worktree, root.path(), "p pause  x cancel");
+    assert!(
+        reopened.screen().contains("Focus 2"),
+        "{}",
+        reopened.screen()
+    );
+
+    // After a crash, the next dashboard owns the timer again.
+    reopened.kill();
+    let mut recovered = open_dashboard(&repository, root.path(), "p pause  x cancel");
+    recovered.send(b"x");
+    recovered.expect("f focus  b break");
+    recovered.send(b"q");
+    assert!(recovered.wait().success());
 }

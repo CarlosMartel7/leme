@@ -4,7 +4,7 @@ mod support;
 
 use std::fs;
 
-use leme::config::{Agent, ConfigError, FILE_NAME, Preferences};
+use leme::config::{Agent, ClockFormat, ConfigError, FILE_NAME, Preferences};
 use support::{Leme, TestDir, add_worktree, failure_message, init_repository, status_json};
 
 fn parse_error(text: &str) -> String {
@@ -20,6 +20,7 @@ fn an_empty_file_uses_the_defaults() {
         Preferences {
             integration_branch: "main".to_owned(),
             preferred_agent: Agent::Claude,
+            clock_format: ClockFormat::TwentyFourHour,
         }
     );
 }
@@ -30,6 +31,7 @@ fn explicit_values_replace_the_defaults() {
         r#"
         integration_branch = "develop"
         preferred_agent = "codex"
+        clock_format = "12h"
         "#,
     )
     .unwrap();
@@ -39,6 +41,7 @@ fn explicit_values_replace_the_defaults() {
         Preferences {
             integration_branch: "develop".to_owned(),
             preferred_agent: Agent::Codex,
+            clock_format: ClockFormat::TwelveHour,
         }
     );
 }
@@ -76,6 +79,14 @@ fn agent_names_are_case_sensitive() {
     let error = parse_error(r#"preferred_agent = "Codex""#);
 
     assert!(error.contains("preferred_agent"), "{error}");
+}
+
+#[test]
+fn an_unsupported_clock_format_lists_the_supported_ones() {
+    let error = parse_error(r#"clock_format = "24""#);
+
+    assert!(error.contains("clock_format"), "{error}");
+    assert!(error.contains("`24h` or `12h`"), "{error}");
 }
 
 #[test]
