@@ -6,5 +6,6 @@ pub mod dashboard;
 pub mod diagnostics;
 pub mod git;
 pub mod herdr;
+pub mod skills;
 pub mod state;
 pub mod time;

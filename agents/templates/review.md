@@ -1,8 +1,8 @@
 <!--
 Review template. The feature agent fills it when a step is finished, publishes
 it to the task's Notion record as awaiting review, and stops. If publication
-fails, save the same text under leme-notion-files/ in the primary checkout and
-say so. Times use ISO 8601 with an offset.
+fails, give the user the same text and say it was not published. Times use
+ISO 8601 with an offset.
 
 Keep three kinds of statement apart:
 - Observed: seen directly (command output, files on disk), with source and time.
@@ -21,7 +21,7 @@ Never report a check as passed unless you ran it and saw it pass.
 | Branch / worktree | `<branch>` at `<absolute worktree path>` |
 | Base commit | `<short SHA of HEAD the changes were made on>` |
 | Prepared at | `<time>` |
-| Publication | `<published: Notion URL / pending: publication ID and file path>` |
+| Publication | `<published: Notion URL / not published: reason>` |
 | State | awaiting review |
 
 ## Summary

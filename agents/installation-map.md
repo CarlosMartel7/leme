@@ -6,6 +6,10 @@ install them. A separate installer, written by the user, copies them to the
 destination below. This file is that installer's contract: every resource in
 `agents/` is listed here with its source and destination.
 
+The bundled workflow skills in `agents/skills/` are the exception: Leme's own
+skill installer copies them into each agent's skills directory, as described
+under [Skills](#skills).
+
 Executable integration code lives in `src/agents/`, not here.
 
 ## Destination
@@ -45,16 +49,76 @@ the dictator (F10) and feature agents (F07).
 | `agents/templates/review.md` | `<agents-dir>/templates/review.md` | Feature agents | Step review with evidence, checks and commit message |
 | `agents/templates/update.json` | `<agents-dir>/templates/update.json` | All roles | Structured update for Leme (fields below) |
 | `agents/installation-map.md` | `<agents-dir>/installation-map.md` | Installer, user | This inventory and the update contract |
+| `agents/skills/<name>/` (every file listed in the catalog) | Not in `<agents-dir>`; see [Skills](#skills) | Agents | Bundled workflow skills |
+| `agents/skills/catalog.toml` | Not installed | Skill installer | Skill inventory with sources and file hashes |
+| `agents/skills/.gitattributes` | Not installed | Git | Keeps skill files byte-for-byte |
 
-There are no helper scripts or skills yet. A script will be added, and listed
-here, by the feature that defines its inputs and outputs.
+There are no helper scripts yet. A script will be added, and listed here, by
+the feature that defines its inputs and outputs.
+
+## Skills
+
+`agents/skills/` holds snapshots of the user's existing workflow skills, so a
+Leme installation can provide them without the author's home directory. Each
+skill is a complete directory: its `SKILL.md` and every supporting file, with
+relative references kept intact. The skills own their Notion workflows; Leme
+copies their files and never publishes, queries Notion or holds credentials.
+
+`agents/skills/catalog.toml` is the inventory. For each skill it records the
+installed name, whether it was requested or is a helper dependency, the source
+it was copied from, the bundled skills it invokes or mentions, the tools it
+expects at use time, and every file with its size and SHA-256 hash. A file not
+in the catalog is not part of the skill.
+
+| Skill | Kind | Copied from | Expects at use time |
+| --- | --- | --- | --- |
+| `implement-feature-step` | requested | `~/.claude/skills/implement-feature-step` | Git, Notion connector |
+| `implement-feature-yolo` | requested | `~/.claude/skills/implement-feature-yolo` | Git, Notion connector |
+| `for-dummies` | requested | `~/.codex/skills/for-dummies` | Nothing |
+| `plan-parallel-work` | requested | `~/.codex/skills/plan-parallel-work` | Git, Notion connector |
+| `create-commit-kanban` | requested | `~/.agents/skills/create-commit-kanban` | Notion connector |
+| `grilling` | requested | `~/.agents/skills/grilling` | Nothing |
+| `grill-with-docs` (requested as grilling-with-docs) | requested | `~/.agents/skills/grill-with-docs` | Invoking skills by name; `grilling` and `domain-modeling` installed |
+| `plan-feature-commits` | requested | `~/.agents/skills/plan-feature-commits` | Git, Notion connector |
+| `plan-to-notion` | requested | `~/.agents/skills/plan-to-notion` | Notion connector, Plan collaboration mode |
+| `pr-audit` | requested | `~/.agents/skills/pr-audit` | Git, GitHub CLI, Notion connector to publish |
+| `dev-doc` | requested | `~/.codex/skills/dev-doc` | Git, GitHub CLI, Notion connector |
+| `domain-modeling` | dependency of `grill-with-docs` | `~/.agents/skills/domain-modeling` | Nothing |
+
+The source paths are provenance only. Installation reads the bundled copies.
+
+Destinations, at the user scope:
+
+- Codex: `~/.agents/skills/<name>/`;
+- Claude Code: `~/.claude/skills/<name>/`, or `$CLAUDE_CONFIG_DIR/skills/<name>/`
+  when that variable is set.
+
+`leme skills install` is this installer; [workflow skills](../docs/skills.md)
+describes its use, results and conflict rules.
+
+The skill installer:
+
+1. installs every skill in the catalog, helper dependencies included, so each
+   skill's references resolve;
+2. writes each file exactly as bundled, after checking it against the
+   catalog's size and hash;
+3. leaves other skills in the destination untouched;
+4. never runs skill content, and does not change agent permissions,
+   authentication or connector settings.
+
+The tools in the last column of the table are prerequisites the user sets up;
+installing a skill does not provide them or invoke the skill.
+
+To refresh a snapshot, replace the skill's directory with the new source copy
+and update its entry in the catalog, including every file's size and hash.
+Do not edit a bundled skill's files in place.
 
 ## Structured update (`update.json`)
 
 An agent produces this JSON object to give Leme compact display data about a
 task. Leme stores it locally; it never needs the agent's Notion or provider
-credentials. How the update reaches Leme is defined by the Notion workflow
-feature (F12); this section defines its fields.
+credentials. No Leme command reads it yet; the feature that does will define
+how it reaches Leme. This section defines its fields.
 
 Times are ISO 8601 strings with a UTC offset. A field marked "or null" is null
 when the value is unknown or unavailable. Unknown values are never written as
@@ -83,7 +147,6 @@ zero or as an empty string.
 | `checks[].observed_at` | string | When the result was seen. |
 | `blockers` | array of strings | What blocks the task; empty when nothing does. |
 | `next_action` | string | The next concrete action and who takes it. |
-| `notion.status` | string | `"published"`, `"pending"` (saved in `leme-notion-files/`) or `"not_published"`. |
+| `notion.status` | string | `"published"` or `"not_published"`. |
 | `notion.record_url` | string or null | URL of the Notion record the update refers to. |
-| `notion.publication_id` | string or null | Pending publication ID when `notion.status` is `"pending"`. |
 | `notion.source_read_at` | string or null | When the agent last read the task's Notion plan. |

@@ -23,8 +23,7 @@ Do not start a different step instead.
 - Implement only the current step, within its allowed scope. If you find work
   that belongs to another step, note it for the review instead of doing it.
 - Work only inside your worktree. Do not change files in the primary checkout
-  or in other features' worktrees. The one exception is saving a failed Notion
-  publication under `leme-notion-files/` in the primary checkout.
+  or in other features' worktrees.
 - Run the step's checks and the project's required checks. Record each command
   and its actual result.
 - If a discovery changes the step's scope or the number of steps the feature
@@ -68,9 +67,8 @@ Separate what you **observed** (command output, files on disk) from what you
 **infer**. Do not claim a check passed unless you ran it and saw it pass.
 
 Publish the review to the task's Notion record as awaiting review. If
-publication fails, save the same review under `leme-notion-files/` in the
-primary checkout, with the task and step IDs and the intended Notion
-destination, so it can be published later. Say which of the two happened.
+publication fails, give the user the review text and say that it was not
+published. Leme does not keep or retry failed publications.
 
 ## Stopping for human review
 
